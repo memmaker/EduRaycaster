@@ -317,16 +317,14 @@ namespace MonoGamePlayground
                 double perpWallDist;
                 if (northSouthSide)
                 {
-                    perpWallDist = Math.Abs((mapX - mPlayerPos.X + (1 - mapStepX) / 2.0) / raydir.X);
+                    //perpWallDist = Math.Abs((mapX - mPlayerPos.X + (1 - mapStepX) / 2.0) / raydir.X);
+                    perpWallDist = (sideDistX - deltaDistX);
                 }
                 else
                 {
-                    perpWallDist = Math.Abs((mapY - mPlayerPos.Y + (1 - mapStepY) / 2.0) / raydir.Y);
+                    //perpWallDist = Math.Abs((mapY - mPlayerPos.Y + (1 - mapStepY) / 2.0) / raydir.Y);
+                    perpWallDist = (sideDistY - deltaDistY);
                 }
-                
-                int lineHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
-
-                mWallHeights[columnOnScreen] = lineHeight;
                 
                 // lastcollision = end of the ray
                 Vector2 sourceOfRay = mPlayerPos;
@@ -340,13 +338,15 @@ namespace MonoGamePlayground
                         mPlayerPos + (mCameraProjectionPlane * -1.0f),
                         mPlayerPos + (mCameraProjectionPlane * 1.0f)
                     ));
-                    
                 }
                 Vector2 targetOfRay = nextCollision;
                 mBlueLines.Add(new Tuple<Vector2, Vector2>(
                     sourceOfRay,
                     targetOfRay
                 ));
+                
+                int lineHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
+                mWallHeights[columnOnScreen] = lineHeight;
             }
         }
 
