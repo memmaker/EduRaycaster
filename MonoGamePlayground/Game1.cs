@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace MonoGamePlayground
 {
+    public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions }
     public static class Extensions
     {
         public static int UnitSize = 32;
@@ -21,6 +22,10 @@ namespace MonoGamePlayground
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
         private DebugDrawer mDrawer;
+        private DisplayMode mCurrentMode = DisplayMode.Default;
+
+        private KeyboardState mOldKeyboardState;
+        
         private int mMapWidth = 20;
         private int mMapHeight = 20;
         private int mScreenWidth;
@@ -44,6 +49,12 @@ namespace MonoGamePlayground
         private List<Vector2> mRedPoints = new List<Vector2>();
         
         private int[] mMap;
+        public bool ShowEqualDistanceSteps { get; set; }
+        public bool ShowCollisionPoints { get; set; }
+
+        public bool ShowPreCalcSteps { get; set; }
+
+        public bool ShowGridSteps { get; set; }
         public Game1()
         {
             mUnitSize = Extensions.UnitSize;
@@ -56,6 +67,20 @@ namespace MonoGamePlayground
             _graphics.PreferredBackBufferHeight = mScreenHeight;
             _graphics.ApplyChanges();
 
+            LoadMap();
+
+            Content.RootDirectory = "Content";
+            IsMouseVisible = true;
+
+            mPlayerPixelPos = new Vector2(mScreenWidth / 2.0f, mScreenHeight / 2.0f);
+            mPlayerDir = new Vector2(2, 1);
+            mPlayerDir.Normalize();
+            
+            mDrawer = new DebugDrawer(_graphics.GraphicsDevice);
+        }
+
+        private void LoadMap()
+        {
             mMap = new int[mMapWidth * mMapHeight];
             for (int x = 0; x < mMapWidth; x++)
             {
@@ -66,23 +91,48 @@ namespace MonoGamePlayground
                     {
                         value = 1;
                     }
+
                     SetMapAt(x, y, value);
                 }
             }
+
             SetMapAt(14, 1, 1);
             SetMapAt(14, 2, 1);
             SetMapAt(14, 3, 1);
             SetMapAt(13, 3, 1);
             SetMapAt(12, 3, 1);
-            
-            Content.RootDirectory = "Content";
-            IsMouseVisible = true;
+        }
 
-            mPlayerPixelPos = new Vector2(mScreenWidth / 2.0f, mScreenHeight / 2.0f);
-            mPlayerDir = new Vector2(2, 1);
-            mPlayerDir.Normalize();
-            
-            mDrawer = new DebugDrawer(_graphics.GraphicsDevice);
+        private void NextDisplayMode()
+        {
+            mCurrentMode = (DisplayMode)(((int)mCurrentMode + 1) % Enum.GetNames(typeof(DisplayMode)).Length);
+            switch (mCurrentMode)
+            {
+                case DisplayMode.Default:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = false;
+                    ShowGridSteps = false;
+                    break;
+                case DisplayMode.Precalculations:
+                    ShowPreCalcSteps = true;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = false;
+                    ShowGridSteps = false;
+                    break;
+                case DisplayMode.EqualDistanceSteps:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = true;
+                    ShowCollisionPoints = false;
+                    ShowGridSteps = false;
+                    break;
+                case DisplayMode.Collisions:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = true;
+                    ShowGridSteps = true;
+                    break;
+            }
         }
 
         private void SetMapAt(int x, int y, int value)
@@ -108,6 +158,7 @@ namespace MonoGamePlayground
             HandleInput();
 
             Raycast();
+            
             Display("PlayerPos", mPlayerPos.ToString());
             Display("PlayerMapPos", mPlayerMapPos.ToString());
             Display("PlayerDir", mPlayerDir.ToString());
@@ -123,6 +174,7 @@ namespace MonoGamePlayground
             mRedPoints.Clear();
             mBlueLines.Clear();
             mPoints.Clear();
+            
             Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
 
             float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
@@ -148,34 +200,41 @@ namespace MonoGamePlayground
 
             if (raydir.X < 0)
             {
-                //deltaDistX *= -1;
+                //sideDistX *= -1;
                 mapStepX = -1;
-                intraCellPositionX = mPlayerPos.X - mPlayerMapPos.X;
+                intraCellPositionX = mPlayerPos.X - mapX;
+                sideDistX = intraCellPositionX * deltaDistX;
             }
             else
             {
                 mapStepX = 1;
                 //intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
-                intraCellPositionX = (mPlayerMapPos.X + 1.0f - mPlayerPos.X);
+                intraCellPositionX = (mapX + 1.0f - mPlayerPos.X);
                 mapDrawOffSetX = 1;
+                sideDistX = intraCellPositionX * deltaDistX;
             }
+            
             
             if (raydir.Y < 0)
             {
                 //deltaDistY *= -1;
                 mapStepY = -1;
-                intraCellPositionY = mPlayerPos.Y - mPlayerMapPos.Y;
+                intraCellPositionY = mPlayerPos.Y - mapY;
+                sideDistY = intraCellPositionY * deltaDistY;
             }
             else
             {
                 mapStepY = 1;
-                intraCellPositionY = (mPlayerMapPos.Y + 1.0f - mPlayerPos.Y);
-                mapDrawOffSetY = 1;
+                intraCellPositionY = (mapY + 1.0f - mPlayerPos.Y);
+                sideDistY = intraCellPositionY * deltaDistY;
             }
-            sideDistX = intraCellPositionX * deltaDistX;
-            sideDistY = intraCellPositionY * deltaDistY;
 
-            //DrawSteps(xstart, ystart, mapX + mapDrawOffSetX, mapY + mapDrawOffSetY);
+            if (ShowPreCalcSteps)
+            {
+                mRedPoints.Add(mPlayerPos + (raydir * sideDistX));
+                mGreenPoints.Add(mPlayerPos + (raydir * sideDistY));
+            }
+            //DrawSteps(raydir, sideDistX, sideDistY, mapX + mapDrawOffSetX, mapY + mapDrawOffSetY);
 
             bool northSouthSide;
             bool hitWall = false;
@@ -184,9 +243,18 @@ namespace MonoGamePlayground
                 Vector2 nextCollision;
                 if (sideDistX < sideDistY)
                 {
-                    //nextCollision = new Vector2(mPlayerPos.X + sideDistX, mapY + mapDrawOffSetY);
-                    //mRedPoints.Add(nextCollision);
                     // move in Y Direction
+                    nextCollision = mPlayerPos + (raydir * sideDistX);
+                    if (ShowCollisionPoints) mRedPoints.Add(nextCollision);
+                    if (ShowEqualDistanceSteps)
+                    {
+                        mRedLines.Add(new Tuple<Vector2, Vector2>(
+                        nextCollision,
+                        new Vector2(mPlayerPos.X, nextCollision.Y)));
+                        
+                    }
+                    
+                    
                     mapX += mapStepX;
                     northSouthSide = true;
                     sideDistX += deltaDistX;
@@ -194,50 +262,31 @@ namespace MonoGamePlayground
                 else
                 {
                     // move in X Direction
-                    //nextCollision = new Vector2(mapX + mapDrawOffSetX, mPlayerPos.Y + sideDistY);
-                    //mGreenPoints.Add(nextCollision);
+                    nextCollision = mPlayerPos + (raydir * sideDistY);
+                    if (ShowCollisionPoints) mGreenPoints.Add(nextCollision);
+                    if (ShowEqualDistanceSteps)
+                    {
+                        mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                            nextCollision,
+                            new Vector2(nextCollision.X, mPlayerPos.Y)));
+                    }
 
                     mapY += mapStepY;
                     northSouthSide = false;
                     sideDistY += deltaDistY;
                 }
                 
-                mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
+                if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
                 
                 if (GetMapAt(mapX, mapY) > 0)
                 {
                     hitWall = true;
+                    mBlueLines.Add(new Tuple<Vector2, Vector2>(
+                        nextCollision,
+                        mPlayerPos));
                 }
             }
         }
-
-        private void DrawSteps(float xstart, float ystart, int intialDrawMapX, int intialDrawMapY)
-        {
-            mGreenLines.Add(new Tuple<Vector2, Vector2>(
-                mPlayerPos,
-                new Vector2(intialDrawMapX, mPlayerPos.Y)
-            ));
-
-            mGreenLines.Add(new Tuple<Vector2, Vector2>(
-                new Vector2(intialDrawMapX, mPlayerPos.Y),
-                new Vector2(intialDrawMapX, mPlayerPos.Y + ystart)
-            ));
-
-            mGreenPoints.Add(new Vector2(intialDrawMapX, mPlayerPos.Y + ystart));
-
-            mRedLines.Add(new Tuple<Vector2, Vector2>(
-                mPlayerPos,
-                new Vector2(mPlayerPos.X, intialDrawMapY)
-            ));
-
-            mRedLines.Add(new Tuple<Vector2, Vector2>(
-                new Vector2(mPlayerPos.X, intialDrawMapY),
-                new Vector2(mPlayerPos.X + xstart, intialDrawMapY)
-            ));
-
-            mRedPoints.Add(new Vector2(mPlayerPos.X + xstart, intialDrawMapY));
-        }
-
 
         protected override void Draw(GameTime gameTime)
         {
@@ -248,9 +297,6 @@ namespace MonoGamePlayground
             
             // Player
             mDrawer.DrawPoint(mPlayerPos.ToScreen(), Color.White);
-            
-            // Player Direction
-            mDrawer.DrawSegment(mPlayerPos.ToScreen(), (mPlayerPos + (mPlayerDir * 20f)).ToScreen(), Color.White);
             
             foreach (var line in mRedLines)
             {
@@ -341,6 +387,13 @@ namespace MonoGamePlayground
             var keyboardState = Keyboard.GetState();
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || keyboardState.IsKeyDown(Keys.Escape))
                 Exit();
+            
+            
+            if (keyboardState.IsKeyDown(Keys.Tab) && mOldKeyboardState.IsKeyUp(Keys.Tab))
+            {
+                NextDisplayMode();
+            }
+            
             var move = Vector2.Zero;
             if (keyboardState.IsKeyDown(Keys.A))
             {
@@ -381,6 +434,8 @@ namespace MonoGamePlayground
             mPlayerPos = new Vector2(
                 mPlayerPixelPos.X / mUnitSize,
                 mPlayerPixelPos.Y / mUnitSize);
+
+            mOldKeyboardState = keyboardState;
         }
 
     }
