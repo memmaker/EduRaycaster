@@ -8,7 +8,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace MonoGamePlayground
 {
-    public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions }
+    public enum DisplayMode { Default, MultipleRays, Precalculations, EqualDistanceSteps, Collisions }
     public static class Extensions
     {
         public static int UnitSize = 32;
@@ -17,7 +17,7 @@ namespace MonoGamePlayground
             return value * UnitSize;
         }
     }
-    public class Game1 : Game
+    public class Raycaster : Game
     {
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
@@ -49,14 +49,17 @@ namespace MonoGamePlayground
         private List<Vector2> mRedPoints = new List<Vector2>();
         
         private int[] mMap;
+        private Vector2 mCameraProjectionPlane;
         public bool ShowEqualDistanceSteps { get; set; }
         public bool ShowCollisionPoints { get; set; }
 
         public bool ShowPreCalcSteps { get; set; }
 
         public bool ShowGridSteps { get; set; }
-        public Game1()
+        public int RayCount { get; set; }
+        public Raycaster()
         {
+            RayCount = 1;
             mUnitSize = Extensions.UnitSize;
             mScreenWidth = mMapWidth * mUnitSize;
             mScreenHeight = mMapHeight * mUnitSize;
@@ -113,24 +116,35 @@ namespace MonoGamePlayground
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    RayCount = 1;
+                    break;
+                case DisplayMode.MultipleRays:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = false;
+                    ShowGridSteps = false;
+                    RayCount = 32;
                     break;
                 case DisplayMode.Precalculations:
                     ShowPreCalcSteps = true;
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    RayCount = 1;
                     break;
                 case DisplayMode.EqualDistanceSteps:
                     ShowPreCalcSteps = false;
                     ShowEqualDistanceSteps = true;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    RayCount = 1;
                     break;
                 case DisplayMode.Collisions:
                     ShowPreCalcSteps = false;
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = true;
                     ShowGridSteps = true;
+                    RayCount = 1;
                     break;
             }
         }
@@ -177,116 +191,147 @@ namespace MonoGamePlayground
             
             Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
 
-            float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
-            float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
-            
-            //float deltaDistX = Math.Abs(raydir.X / raydir.Y);
-            //float deltaDistY = Math.Abs(raydir.Y / raydir.X);
-
-            int mapY = mPlayerMapPos.Y;
-            int mapX = mPlayerMapPos.X;
-            
-            float intraCellPositionY;
-            float intraCellPositionX;
-            
-            float sideDistX;
-            float sideDistY;
-
-            int mapStepX;
-            int mapStepY;
-
-            int mapDrawOffSetX = 0;
-            int mapDrawOffSetY = 0;
-
-            if (raydir.X < 0)
+            for (int columnOnScreen = 0; columnOnScreen < RayCount; columnOnScreen++)
             {
-                //sideDistX *= -1;
-                mapStepX = -1;
-                intraCellPositionX = mPlayerPos.X - mapX;
-                sideDistX = intraCellPositionX * deltaDistX;
-            }
-            else
-            {
-                mapStepX = 1;
-                //intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
-                intraCellPositionX = (mapX + 1.0f - mPlayerPos.X);
-                mapDrawOffSetX = 1;
-                sideDistX = intraCellPositionX * deltaDistX;
-            }
-            
-            
-            if (raydir.Y < 0)
-            {
-                //deltaDistY *= -1;
-                mapStepY = -1;
-                intraCellPositionY = mPlayerPos.Y - mapY;
-                sideDistY = intraCellPositionY * deltaDistY;
-            }
-            else
-            {
-                mapStepY = 1;
-                intraCellPositionY = (mapY + 1.0f - mPlayerPos.Y);
-                sideDistY = intraCellPositionY * deltaDistY;
-            }
-
-            if (ShowPreCalcSteps)
-            {
-                mRedPoints.Add(mPlayerPos + (raydir * sideDistX));
-                mGreenPoints.Add(mPlayerPos + (raydir * sideDistY));
-            }
-            //DrawSteps(raydir, sideDistX, sideDistY, mapX + mapDrawOffSetX, mapY + mapDrawOffSetY);
-
-            bool northSouthSide;
-            bool hitWall = false;
-            while (!hitWall)
-            {
-                Vector2 nextCollision;
-                if (sideDistX < sideDistY)
+                float cameraX = ((2 * columnOnScreen) / RayCount) - 1; // x-coordinate in camera space -1..1
+                
+                if (RayCount > 1)
                 {
-                    // move in Y Direction
-                    nextCollision = mPlayerPos + (raydir * sideDistX);
-                    if (ShowCollisionPoints) mRedPoints.Add(nextCollision);
-                    if (ShowEqualDistanceSteps)
-                    {
-                        mRedLines.Add(new Tuple<Vector2, Vector2>(
-                        nextCollision,
-                        new Vector2(mPlayerPos.X, nextCollision.Y)));
-                        
-                    }
-                    
-                    
-                    mapX += mapStepX;
-                    northSouthSide = true;
-                    sideDistX += deltaDistX;
+                    raydir = new Vector2(
+                        mPlayerDir.X + (mCameraProjectionPlane.X * cameraX), 
+                        mPlayerDir.Y + (mCameraProjectionPlane.Y * cameraX)
+                    );
+                }
+
+                float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
+                float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
+
+                //float deltaDistX = Math.Abs(raydir.X / raydir.Y);
+                //float deltaDistY = Math.Abs(raydir.Y / raydir.X);
+
+                int mapY = mPlayerMapPos.Y;
+                int mapX = mPlayerMapPos.X;
+
+                float intraCellPositionY;
+                float intraCellPositionX;
+
+                float sideDistX;
+                float sideDistY;
+
+                int mapStepX;
+                int mapStepY;
+
+                if (raydir.X < 0)
+                {
+                    //sideDistX *= -1;
+                    mapStepX = -1;
+                    intraCellPositionX = mPlayerPos.X - mapX;
+                    sideDistX = intraCellPositionX * deltaDistX;
                 }
                 else
                 {
-                    // move in X Direction
-                    nextCollision = mPlayerPos + (raydir * sideDistY);
-                    if (ShowCollisionPoints) mGreenPoints.Add(nextCollision);
-                    if (ShowEqualDistanceSteps)
+                    mapStepX = 1;
+                    //intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
+                    intraCellPositionX = (mapX + 1.0f - mPlayerPos.X);
+                    sideDistX = intraCellPositionX * deltaDistX;
+                }
+
+
+                if (raydir.Y < 0)
+                {
+                    //deltaDistY *= -1;
+                    mapStepY = -1;
+                    intraCellPositionY = mPlayerPos.Y - mapY;
+                    sideDistY = intraCellPositionY * deltaDistY;
+                }
+                else
+                {
+                    mapStepY = 1;
+                    intraCellPositionY = (mapY + 1.0f - mPlayerPos.Y);
+                    sideDistY = intraCellPositionY * deltaDistY;
+                }
+
+                if (ShowPreCalcSteps) DrawPreCalcSteps(raydir, sideDistX, sideDistY);
+                
+                bool northSouthSide;
+                bool hitWall = false;
+                while (!hitWall)
+                {
+                    Vector2 nextCollision;
+                    if (sideDistX < sideDistY)
                     {
-                        mGreenLines.Add(new Tuple<Vector2, Vector2>(
-                            nextCollision,
-                            new Vector2(nextCollision.X, mPlayerPos.Y)));
+                        // move in Y Direction
+                        nextCollision = mPlayerPos + (raydir * sideDistX);
+                        if (ShowCollisionPoints) mRedPoints.Add(nextCollision);
+                        if (ShowEqualDistanceSteps)
+                        {
+                            mRedLines.Add(new Tuple<Vector2, Vector2>(
+                                nextCollision,
+                                new Vector2(mPlayerPos.X, nextCollision.Y)));
+
+                        }
+
+                        mapX += mapStepX;
+                        northSouthSide = true;
+                        sideDistX += deltaDistX;
+                    }
+                    else
+                    {
+                        // move in X Direction
+                        nextCollision = mPlayerPos + (raydir * sideDistY);
+                        if (ShowCollisionPoints) mGreenPoints.Add(nextCollision);
+                        if (ShowEqualDistanceSteps)
+                        {
+                            mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                                nextCollision,
+                                new Vector2(nextCollision.X, mPlayerPos.Y)));
+                        }
+
+                        mapY += mapStepY;
+                        northSouthSide = false;
+                        sideDistY += deltaDistY;
                     }
 
-                    mapY += mapStepY;
-                    northSouthSide = false;
-                    sideDistY += deltaDistY;
-                }
-                
-                if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
-                
-                if (GetMapAt(mapX, mapY) > 0)
-                {
-                    hitWall = true;
-                    mBlueLines.Add(new Tuple<Vector2, Vector2>(
-                        nextCollision,
-                        mPlayerPos));
+                    if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
+
+                    if (GetMapAt(mapX, mapY) > 0)
+                    {
+                        hitWall = true;
+                        // lastcollision = end of the ray
+                        mBlueLines.Add(new Tuple<Vector2, Vector2>(
+                            mPlayerPos,
+                            nextCollision
+                        ));
+                    }
                 }
             }
         }
+
+        private void DrawPreCalcSteps(Vector2 raydir, float sideDistX, float sideDistY)
+        {
+            var firstCollisionX = mPlayerPos + (raydir * sideDistX);
+            mRedPoints.Add(firstCollisionX);
+            mRedLines.Add(new Tuple<Vector2, Vector2>(
+                mPlayerPos,
+                new Vector2(firstCollisionX.X, mPlayerPos.Y)
+            ));
+            mRedLines.Add(new Tuple<Vector2, Vector2>(
+                firstCollisionX,
+                new Vector2(firstCollisionX.X, mPlayerPos.Y)
+            ));
+
+            var firstCollisionY = mPlayerPos + (raydir * sideDistY);
+            mGreenPoints.Add(firstCollisionY);
+            mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                mPlayerPos,
+                new Vector2(mPlayerPos.X, firstCollisionY.Y)
+            ));
+            mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                firstCollisionY,
+                new Vector2(mPlayerPos.X, firstCollisionY.Y)
+            ));
+        }
+
 
         protected override void Draw(GameTime gameTime)
         {
@@ -428,6 +473,8 @@ namespace MonoGamePlayground
             }
 
             mPlayerDir = Vector2.Transform(mPlayerDir, rotationMatrix);
+            UpdateCameraPlane();
+            
             mPlayerPixelPos += move;
             mPlayerMapPos = new Point((int) mPlayerPixelPos.X / mUnitSize, (int) mPlayerPixelPos.Y / mUnitSize);
             
@@ -438,5 +485,11 @@ namespace MonoGamePlayground
             mOldKeyboardState = keyboardState;
         }
 
+        private void UpdateCameraPlane()
+        {
+            float fov = 66.0f;
+            float camwidth = (float)Math.Tan(MathHelper.ToRadians(fov) / 2);
+            mCameraProjectionPlane = Vector2.Normalize(new Vector2(-mPlayerDir.Y, mPlayerDir.X)) * camwidth;
+        }
     }
 }
