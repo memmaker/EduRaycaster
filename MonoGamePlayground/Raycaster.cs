@@ -83,8 +83,6 @@ namespace MonoGamePlayground
             mRayCountNeeded = mScreenWidth;
             mWallHits = new Wallhit[mScreenWidth];
             
-            LoadMap();
-
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
 
@@ -93,6 +91,11 @@ namespace MonoGamePlayground
             mPlayerDir.Normalize();
             
             mDrawer = new DebugDrawer(_graphics.GraphicsDevice);
+
+            Window.Title = "EduRaycaster";
+            Window.AllowUserResizing = false;
+            
+            LoadMap();
         }
 
         private void LoadMap()
