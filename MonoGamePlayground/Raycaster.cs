@@ -1,17 +1,15 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
 namespace MonoGamePlayground
 {
-    public enum DisplayMode { Default, MultipleRays, Precalculations, EqualDistanceSteps, Collisions }
+    public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions, MultipleRaysWithCollisions, MultipleRays }
     public static class Extensions
     {
-        public static int UnitSize = 32;
+        public static int UnitSize = 64;
         public static Vector2 ToScreen(this Vector2 value)
         {
             return value * UnitSize;
@@ -26,8 +24,8 @@ namespace MonoGamePlayground
 
         private KeyboardState mOldKeyboardState;
         
-        private int mMapWidth = 20;
-        private int mMapHeight = 20;
+        private int mMapWidth = 10;
+        private int mMapHeight = 10;
         private int mScreenWidth;
         private int mScreenHeight;
         private Vector2 mPlayerPixelPos;
@@ -55,8 +53,11 @@ namespace MonoGamePlayground
 
         public bool ShowPreCalcSteps { get; set; }
 
+        public bool ShowCameraPlane { get; set; }
         public bool ShowGridSteps { get; set; }
         public int RayCount { get; set; }
+        private int mRayCountNeeded;
+        private float[] mWallHeights;
         public Raycaster()
         {
             RayCount = 1;
@@ -66,10 +67,13 @@ namespace MonoGamePlayground
             
             _graphics = new GraphicsDeviceManager(this);
             _graphics.ApplyChanges();
-            _graphics.PreferredBackBufferWidth = mScreenWidth; // 2:1
+            _graphics.PreferredBackBufferWidth = mScreenWidth * 2; // 2:1
             _graphics.PreferredBackBufferHeight = mScreenHeight;
             _graphics.ApplyChanges();
 
+            mRayCountNeeded = mScreenWidth;
+            mWallHeights = new float[mScreenWidth];
+            
             LoadMap();
 
             Content.RootDirectory = "Content";
@@ -116,6 +120,7 @@ namespace MonoGamePlayground
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    ShowCameraPlane = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.MultipleRays:
@@ -123,13 +128,23 @@ namespace MonoGamePlayground
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
-                    RayCount = 32;
+                    ShowCameraPlane = true;
+                    RayCount = mRayCountNeeded;
+                    break;
+                case DisplayMode.MultipleRaysWithCollisions:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = true;
+                    ShowGridSteps = false;
+                    ShowCameraPlane = true;
+                    RayCount = 4;
                     break;
                 case DisplayMode.Precalculations:
                     ShowPreCalcSteps = true;
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    ShowCameraPlane = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.EqualDistanceSteps:
@@ -137,6 +152,7 @@ namespace MonoGamePlayground
                     ShowEqualDistanceSteps = true;
                     ShowCollisionPoints = false;
                     ShowGridSteps = false;
+                    ShowCameraPlane = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.Collisions:
@@ -144,6 +160,7 @@ namespace MonoGamePlayground
                     ShowEqualDistanceSteps = false;
                     ShowCollisionPoints = true;
                     ShowGridSteps = true;
+                    ShowCameraPlane = false;
                     RayCount = 1;
                     break;
             }
@@ -193,14 +210,11 @@ namespace MonoGamePlayground
 
             for (int columnOnScreen = 0; columnOnScreen < RayCount; columnOnScreen++)
             {
-                float cameraX = ((2 * columnOnScreen) / RayCount) - 1; // x-coordinate in camera space -1..1
+                float cameraX = ((2.0f * columnOnScreen) / RayCount) - 1.0f; // x-coordinate in camera space -1..1
                 
                 if (RayCount > 1)
                 {
-                    raydir = new Vector2(
-                        mPlayerDir.X + (mCameraProjectionPlane.X * cameraX), 
-                        mPlayerDir.Y + (mCameraProjectionPlane.Y * cameraX)
-                    );
+                    raydir = Vector2.Normalize(mPlayerDir + (mCameraProjectionPlane * cameraX));
                 }
 
                 float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
@@ -236,7 +250,6 @@ namespace MonoGamePlayground
                     sideDistX = intraCellPositionX * deltaDistX;
                 }
 
-
                 if (raydir.Y < 0)
                 {
                     //deltaDistY *= -1;
@@ -253,11 +266,12 @@ namespace MonoGamePlayground
 
                 if (ShowPreCalcSteps) DrawPreCalcSteps(raydir, sideDistX, sideDistY);
                 
-                bool northSouthSide;
+                bool northSouthSide = false;
                 bool hitWall = false;
+                Vector2 nextCollision = Vector2.Zero;
+                
                 while (!hitWall)
                 {
-                    Vector2 nextCollision;
                     if (sideDistX < sideDistY)
                     {
                         // move in Y Direction
@@ -297,15 +311,45 @@ namespace MonoGamePlayground
                     if (GetMapAt(mapX, mapY) > 0)
                     {
                         hitWall = true;
-                        // lastcollision = end of the ray
-                        mBlueLines.Add(new Tuple<Vector2, Vector2>(
-                            mPlayerPos,
-                            nextCollision
-                        ));
                     }
                 }
+
+                double perpWallDist;
+                if (northSouthSide)
+                {
+                    perpWallDist = Math.Abs((mapX - mPlayerPos.X + (1 - mapStepX) / 2.0) / raydir.X);
+                }
+                else
+                {
+                    perpWallDist = Math.Abs((mapY - mPlayerPos.Y + (1 - mapStepY) / 2.0) / raydir.Y);
+                }
+                
+                int lineHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
+
+                mWallHeights[columnOnScreen] = lineHeight;
+                
+                // lastcollision = end of the ray
+                Vector2 sourceOfRay = mPlayerPos;
+                if (RayCount > 1)
+                {
+                    sourceOfRay = mPlayerPos + (mCameraProjectionPlane * cameraX);
+                }
+                if (ShowCameraPlane)
+                {
+                    mBlueLines.Add(new Tuple<Vector2, Vector2>(
+                        mPlayerPos + (mCameraProjectionPlane * -1.0f),
+                        mPlayerPos + (mCameraProjectionPlane * 1.0f)
+                    ));
+                    
+                }
+                Vector2 targetOfRay = nextCollision;
+                mBlueLines.Add(new Tuple<Vector2, Vector2>(
+                    sourceOfRay,
+                    targetOfRay
+                ));
             }
         }
+
 
         private void DrawPreCalcSteps(Vector2 raydir, float sideDistX, float sideDistY)
         {
@@ -372,12 +416,27 @@ namespace MonoGamePlayground
             {
                 mDrawer.DrawPoint(point.ToScreen(), Color.LightGreen);
             }
+
+            Draw3DView();
             
             mDrawer.FlushDrawing();
             
             TextDraw();
             
             base.Draw(gameTime);
+        }
+
+        private void Draw3DView()
+        {
+            for (var columnX = 0; columnX < mWallHeights.Length; columnX++)
+            {
+                var height = mWallHeights[columnX];
+                var center = mScreenHeight/2;
+                mDrawer.DrawSegment(
+                    new Vector2(mScreenWidth + columnX, center - (height/2)),
+                    new Vector2(mScreenWidth + columnX, center + (height/2)),
+                    Color.Crimson);
+            }
         }
 
         private void DrawGrid()
