@@ -57,13 +57,18 @@ namespace MonoGamePlayground
             _graphics.ApplyChanges();
 
             mMap = new int[mMapWidth * mMapHeight];
-            for (int i = 0; i < mMapWidth * mMapHeight; i++)
+            for (int x = 0; x < mMapWidth; x++)
             {
-                mMap[i] = 0;
+                for (int y = 0; y < mMapHeight; y++)
+                {
+                    var value = 0;
+                    if (x == 0 || y == 0 || x == mMapWidth - 1 || y == mMapHeight - 1)
+                    {
+                        value = 1;
+                    }
+                    SetMapAt(x, y, value);
+                }
             }
-
-            SetMapAt(0, 0, 1);
-            SetMapAt(14, 0, 1);
             SetMapAt(14, 1, 1);
             SetMapAt(14, 2, 1);
             SetMapAt(14, 3, 1);
@@ -74,7 +79,8 @@ namespace MonoGamePlayground
             IsMouseVisible = true;
 
             mPlayerPixelPos = new Vector2(mScreenWidth / 2.0f, mScreenHeight / 2.0f);
-            mPlayerDir = Vector2.UnitY;
+            mPlayerDir = new Vector2(2, 1);
+            mPlayerDir.Normalize();
             
             mDrawer = new DebugDrawer(_graphics.GraphicsDevice);
         }
@@ -133,9 +139,9 @@ namespace MonoGamePlayground
             int mapStepX;
             int mapStepY;
 
-            int firstMapX = mapX;
-            int firstMapY = mapY;
-            
+            int mapDrawOffSetX = 0;
+            int mapDrawOffSetY = 0;
+
             if (ray.X < 0)
             {
                 xstep *= -1;
@@ -146,7 +152,7 @@ namespace MonoGamePlayground
             {
                 mapStepX = 1;
                 intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
-                firstMapX += 1;
+                mapDrawOffSetX = 1;
             }
             
             if (ray.Y < 0)
@@ -159,63 +165,73 @@ namespace MonoGamePlayground
             {
                 mapStepY = 1;
                 intraCellPositionY = 1 - (mPlayerPos.Y - mPlayerMapPos.Y);
-                firstMapY += 1;
+                mapDrawOffSetY = 1;
             }
             xstart = intraCellPositionY * xstep;
             ystart = intraCellPositionX * ystep;
             
-            Display("ystep", ystep.ToString(CultureInfo.InvariantCulture));
-            Display("ystart", ystart.ToString(CultureInfo.InvariantCulture));
+            Display("xstep", xstep.ToString());
+            Display("ystep", ystep.ToString());
             
-            mGreenLines.Add(new Tuple<Vector2, Vector2>(
-                mPlayerPos,
-                new Vector2(firstMapX, mPlayerPos.Y)
-            ));
-            
-            mGreenLines.Add(new Tuple<Vector2, Vector2>(
-                new Vector2(firstMapX, mPlayerPos.Y),
-                new Vector2(firstMapX, mPlayerPos.Y + ystart)
-            ));
+            //DrawSteps(xstart, ystart, mapX + mapDrawOffSetX, mapY + mapDrawOffSetY);
 
-            mGreenPoints.Add(new Vector2(firstMapX, mPlayerPos.Y + ystart));
-            
-            mRedLines.Add(new Tuple<Vector2, Vector2>(
-                mPlayerPos,
-                new Vector2(mPlayerPos.X, firstMapY)
-            ));
-
-            mRedLines.Add(new Tuple<Vector2, Vector2>(
-                new Vector2(mPlayerPos.X, firstMapY),
-                new Vector2(mPlayerPos.X + xstart, firstMapY)
-            ));
-            
-            mRedPoints.Add(new Vector2(mPlayerPos.X + xstart, firstMapY));
-            
             bool northSouthSide;
             bool hitWall = false;
             while (!hitWall)
             {
-                if (xstart < ystart)
+                if (Math.Abs(xstart) < Math.Abs(ystart))
                 {
-                    // move in X Direction
-                    mapX += mapStepX;
-                    northSouthSide = false;
-                    ystart -= ystep;
-                    //mGreenPoints.Add(new Vector2(xGridCoord, ystart));
-                }
-                else
-                {
+                    var nextCollision = new Vector2(mPlayerPos.X + xstart, mapY + mapDrawOffSetY);
+                    mRedPoints.Add(nextCollision);
                     // move in Y Direction
                     mapY += mapStepY;
                     northSouthSide = true;
                     xstart += xstep;
                 }
-
+                
+                else
+                {
+                    // move in X Direction
+                    var nextCollision = new Vector2(mapX + mapDrawOffSetX, mPlayerPos.Y + ystart);
+                    mGreenPoints.Add(nextCollision);
+                    mapX += mapStepX;
+                    northSouthSide = false;
+                    ystart += ystep;
+                }
+                
+                
                 if (GetMapAt(mapX, mapY) > 0)
                 {
                     hitWall = true;
                 }
             }
+        }
+
+        private void DrawSteps(float xstart, float ystart, int intialDrawMapX, int intialDrawMapY)
+        {
+            mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                mPlayerPos,
+                new Vector2(intialDrawMapX, mPlayerPos.Y)
+            ));
+
+            mGreenLines.Add(new Tuple<Vector2, Vector2>(
+                new Vector2(intialDrawMapX, mPlayerPos.Y),
+                new Vector2(intialDrawMapX, mPlayerPos.Y + ystart)
+            ));
+
+            mGreenPoints.Add(new Vector2(intialDrawMapX, mPlayerPos.Y + ystart));
+
+            mRedLines.Add(new Tuple<Vector2, Vector2>(
+                mPlayerPos,
+                new Vector2(mPlayerPos.X, intialDrawMapY)
+            ));
+
+            mRedLines.Add(new Tuple<Vector2, Vector2>(
+                new Vector2(mPlayerPos.X, intialDrawMapY),
+                new Vector2(mPlayerPos.X + xstart, intialDrawMapY)
+            ));
+
+            mRedPoints.Add(new Vector2(mPlayerPos.X + xstart, intialDrawMapY));
         }
 
 

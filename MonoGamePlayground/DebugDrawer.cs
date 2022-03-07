@@ -8,8 +8,8 @@ namespace MonoGamePlayground
 {
     public class DebugDrawer
     {
-        public const int MAX_VERTS = 4000;
-        public const int MAX_INDICES = 4000;
+        public const int MAX_VERTS = 9000;
+        public const int MAX_INDICES = 9000;
 
         BasicEffect basicEffect;
         DynamicVertexBuffer vertexBuffer;
