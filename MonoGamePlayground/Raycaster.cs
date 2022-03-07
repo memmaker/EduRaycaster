@@ -16,12 +16,18 @@ namespace MonoGamePlayground
         {
             return value * UnitSize;
         }
+
+        public static string ToPrettyString(this Vector2 value)
+        {
+            return $"({value.X:#,###.##} / {value.Y:#,###.##})";
+        }
     }
     public class Raycaster : Game
     {
         private int mMapWidth = 10;
         private int mMapHeight = 10;
         private float mFoVInDegrees = 66.0f;
+        private float mWallHeightFactor = 0.8f;
         
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
@@ -41,6 +47,7 @@ namespace MonoGamePlayground
         private Vector2 mPlayerPos;
         private Vector2 mStartVector;
         private Vector2 mFirstCollisionX;
+
         private List<Tuple<Vector2,Vector2>> mRedLines = new List<Tuple<Vector2, Vector2>>();
         private List<Tuple<Vector2,Vector2>> mGreenLines = new List<Tuple<Vector2, Vector2>>();
         
@@ -70,7 +77,7 @@ namespace MonoGamePlayground
         
         private int mRayCountNeeded;
         private WallSegmentInfo[] mWallHits;
-        private Color[] mColorMap = { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen };
+        private Color[] mColorMap = { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen, Color.DarkOrchid, Color.LightSkyBlue };
         private Rectangle mDestinationOnScreenRect;
         private Rectangle mTextureSegmentRect;
         private Texture2D[] mWallTextures;
@@ -105,11 +112,12 @@ namespace MonoGamePlayground
 
             mWallTextures = new[]
             {
-                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/SmoothStone.png"),
-                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Dirt.png"),
-                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Bricks.png"),
-                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/BrickOv.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Brick_Wall_64x64.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/bricksx64.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Green_Wall_Rocks_64x64.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/NIVeR.png"),
                 Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/bookshelf.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/felix.png"),
             };
             LoadMap();
         }
@@ -134,6 +142,10 @@ namespace MonoGamePlayground
             
             SetMapAt(5, 6, 1);
             SetMapAt(6, 7, 2);
+
+            SetMapAt(9, 9, 0);
+            SetMapAt(9, 8, 5);
+            SetMapAt(9, 7, 0);
         }
 
         private void SetMapAt(int x, int y, int value)
@@ -252,9 +264,9 @@ namespace MonoGamePlayground
 
             if (ShowDebugText)
             {
-                Display("PlayerPos", mPlayerPos.ToString());
+                Display("PlayerPos", mPlayerPos.ToPrettyString());
                 Display("PlayerMapPos", mPlayerMapPos.ToString());
-                Display("PlayerDir", mPlayerDir.ToString());
+                Display("PlayerDir", mPlayerDir.ToPrettyString());
             }
 
             base.Update(gameTime);
@@ -395,7 +407,14 @@ namespace MonoGamePlayground
                     perpWallDist = sideDistY - deltaDistY;
                 }
                 
-                // 6.1 Den korrigierten Abstand zur Wand berechnen
+                // 6.1 Die original Distanz zur Wand für das Texture Mapping verwenden
+                double wallX; //where exactly the wall was hit
+                if (eastWestSide) wallX = mPlayerPos.Y + perpWallDist * raydir.Y;
+                else wallX = mPlayerPos.X + perpWallDist * raydir.X;
+                wallX -= Math.Floor(wallX);
+                int textureX = (int)(wallX * mWallTextures[textureIndex].Width);
+                
+                // 6.2 Den korrigierten Abstand zur Wand berechnen
                 if (DoFishEyeCorrection)
                 {
                     // Fish-eye correction
@@ -405,15 +424,8 @@ namespace MonoGamePlayground
                 }
                 
                 // 7. Die Höhe des Wandsegments und beliebige andere Parameter zum Zeichnen ermitteln
-                int wallHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
-                
-                double wallX; //where exactly the wall was hit
-                if (eastWestSide) wallX = mPlayerPos.Y + perpWallDist * raydir.Y;
-                else wallX = mPlayerPos.X + perpWallDist * raydir.X;
-                
-                wallX -= Math.Floor(wallX);
-                int textureX = (int)(wallX * mWallTextures[textureIndex].Width);
-                
+                int wallHeight = (int)Math.Abs((mScreenHeight / perpWallDist) * mWallHeightFactor);
+
                 mWallHits[columnOnScreen] = new WallSegmentInfo()
                 {
                     Height = wallHeight,
@@ -472,7 +484,7 @@ namespace MonoGamePlayground
 
             Draw2DView();
             
-            _spriteBatch.Begin();
+            _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.PointClamp);
             
             Draw3DView();
             
@@ -675,6 +687,21 @@ namespace MonoGamePlayground
                 mFoVInDegrees += 1.0f;
                 Display("FoV", mFoVInDegrees.ToString(CultureInfo.InvariantCulture));
             }
+            
+            
+            if (keyboardState.IsKeyDown(Keys.J) && mOldKeyboardState.IsKeyUp(Keys.J))
+            {
+                mWallHeightFactor -= 0.1f;
+                Display("Wall Height Factor", mWallHeightFactor.ToString(CultureInfo.InvariantCulture));
+            }
+            
+            if (keyboardState.IsKeyDown(Keys.K) && mOldKeyboardState.IsKeyUp(Keys.K))
+            {
+                mWallHeightFactor += 0.1f;
+                Display("Wall Height Factor", mWallHeightFactor.ToString(CultureInfo.InvariantCulture));
+            }
+            
+            
             if (keyboardState.IsKeyDown(Keys.R) && mOldKeyboardState.IsKeyUp(Keys.R))
             {
                 ShowDebugText = !ShowDebugText;
