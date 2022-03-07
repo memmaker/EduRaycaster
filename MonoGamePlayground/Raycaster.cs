@@ -244,13 +244,12 @@ namespace MonoGamePlayground
 
                 float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
                 float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
-
-
-                int mapY = mPlayerMapPos.Y;
+                
                 int mapX = mPlayerMapPos.X;
-
-                float intraCellPositionY;
+                int mapY = mPlayerMapPos.Y;
+                
                 float intraCellPositionX;
+                float intraCellPositionY;
 
                 float sideDistX;
                 float sideDistY;
@@ -286,7 +285,7 @@ namespace MonoGamePlayground
 
                 if (ShowPreCalcSteps) DrawPreCalcSteps(raydir, sideDistX, sideDistY);
                 
-                bool northSouthSide = false;
+                bool eastWestSide = false;
                 bool hitWall = false;
                 Vector2 nextCollision = Vector2.Zero;
                 int textureIndex = -1;
@@ -295,7 +294,7 @@ namespace MonoGamePlayground
                 {
                     if (sideDistX < sideDistY)
                     {
-                        // move in Y Direction
+                        // move one unit in X Direction
                         nextCollision = mPlayerPos + (raydir * sideDistX);
                         if (ShowCollisionPoints) mRedPoints.Add(nextCollision);
                         if (ShowEqualDistanceSteps)
@@ -307,12 +306,12 @@ namespace MonoGamePlayground
                         }
 
                         mapX += mapStepX;
-                        northSouthSide = true;
+                        eastWestSide = true;
                         sideDistX += deltaDistX;
                     }
                     else
                     {
-                        // move in X Direction
+                        // move one unit in Y Direction
                         nextCollision = mPlayerPos + (raydir * sideDistY);
                         if (ShowCollisionPoints) mGreenPoints.Add(nextCollision);
                         if (ShowEqualDistanceSteps)
@@ -323,7 +322,7 @@ namespace MonoGamePlayground
                         }
 
                         mapY += mapStepY;
-                        northSouthSide = false;
+                        eastWestSide = false;
                         sideDistY += deltaDistY;
                     }
 
@@ -337,7 +336,7 @@ namespace MonoGamePlayground
                 }
 
                 double perpWallDist;
-                if (northSouthSide)
+                if (eastWestSide)
                 {
                     perpWallDist = sideDistX - deltaDistX;
                 }
@@ -358,7 +357,7 @@ namespace MonoGamePlayground
                 mWallHits[columnOnScreen] = new Wallhit()
                 {
                     Height = lineHeight,
-                    SideIsNS = northSouthSide,
+                    SideIsEastWestSide = eastWestSide,
                     Distance = perpWallDist,
                     Texture = textureIndex
                 };
@@ -468,7 +467,7 @@ namespace MonoGamePlayground
                 var height = wallHit.Height;
                 var center = mScreenHeight/2;
                 var baseColor = mColorMap[wallHit.Texture];
-                if (wallHit.SideIsNS)
+                if (wallHit.SideIsEastWestSide)
                 {
                     baseColor *= 0.7f;
                 }
@@ -611,8 +610,7 @@ namespace MonoGamePlayground
 
             mOldKeyboardState = keyboardState;
         }
-
-
+        
         private void UpdateCameraPlane()
         {
             float camwidth = (float)Math.Tan(MathHelper.ToRadians(mFov) / 2);
@@ -623,7 +621,7 @@ namespace MonoGamePlayground
     internal struct Wallhit
     {
         public int Height { get; set; }
-        public bool SideIsNS { get; set; }
+        public bool SideIsEastWestSide { get; set; }
         public double Distance { get; set; }
         public int Texture { get; set; }
     }

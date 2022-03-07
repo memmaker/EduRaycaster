@@ -43,30 +43,6 @@ namespace MonoGamePlayground
             VertexCount = 0;
             IndexCount = 0;
         }
-        public void DrawPolygon(Vector2[] vertices, int vertexCount, Color color)
-        {
-            for (int i = 0; i < vertexCount - 1; i++)
-            {
-                DrawSegment(vertices[i], vertices[i+1], color);
-            }
-            DrawSegment(vertices[vertexCount - 1], vertices[0], color);
-        }
-        
-        public void DrawCircle(Vector2 center, float radius, Color color)
-        {
-            int pointCount = (int) Math.Ceiling((radius)* Math.PI);
-            Vector2[] vertices = new Vector2[pointCount];
-            
-            var pointTheta = ((float)Math.PI * 2) / (vertices.Length - 1);
-            for (int i = 0; i < vertices.Length; i++)
-            {
-                var theta = pointTheta * i;
-                var x = center.X + ((float)Math.Sin(theta) * radius);
-                var y = center.Y + ((float)Math.Cos(theta) * radius);
-                vertices[i] = new Vector2(x, y);
-            }
-            DrawPolygon(vertices, pointCount, color);
-        }
         public void DrawSegment(Vector2 p1, Vector2 p2, Color color)
         {
             if(Reserve(2, 2))
