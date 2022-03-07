@@ -56,6 +56,8 @@ namespace MonoGamePlayground
         public bool ShowCameraPlane { get; set; }
         public bool ShowGridSteps { get; set; }
         
+        public bool TankControls { get; set; }
+        
         public bool DoFishEyeCorrection { get; set; }
         public int RayCount { get; set; }
         private int mRayCountNeeded;
@@ -551,6 +553,11 @@ namespace MonoGamePlayground
                 NextDisplayMode();
             }
             
+            if (keyboardState.IsKeyDown(Keys.T) && mOldKeyboardState.IsKeyUp(Keys.T))
+            {
+                TankControls = !TankControls;
+            }
+            
             var move = Vector2.Zero;
             if (keyboardState.IsKeyDown(Keys.A))
             {
@@ -586,8 +593,16 @@ namespace MonoGamePlayground
 
             mPlayerDir = Vector2.Transform(mPlayerDir, rotationMatrix);
             UpdateCameraPlane();
+
+            if (TankControls)
+            {
+                mPlayerPixelPos += mPlayerDir * (-move.Y);
+            }
+            else
+            {
+                mPlayerPixelPos += move;
+            }
             
-            mPlayerPixelPos += mPlayerDir * (-move.Y);
             mPlayerMapPos = new Point((int) mPlayerPixelPos.X / mUnitSize, (int) mPlayerPixelPos.Y / mUnitSize);
             
             mPlayerPos = new Vector2(
@@ -596,6 +611,7 @@ namespace MonoGamePlayground
 
             mOldKeyboardState = keyboardState;
         }
+
 
         private void UpdateCameraPlane()
         {
