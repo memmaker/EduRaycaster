@@ -189,6 +189,8 @@ namespace MonoGamePlayground
                     RayCount = 1;
                     break;
             }
+
+            mWallHits = new Wallhit[RayCount];
         }
 
         private void SetMapAt(int x, int y, int value)
