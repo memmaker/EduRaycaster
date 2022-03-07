@@ -121,11 +121,15 @@ namespace MonoGamePlayground
             mGreenLines.Clear();
             mGreenPoints.Clear();
             mRedPoints.Clear();
-            
-            Vector2 ray = new Vector2(mPlayerDir.X, mPlayerDir.Y);
+            mBlueLines.Clear();
+            mPoints.Clear();
+            Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
 
-            float xstep = Math.Abs(ray.X / ray.Y);
-            float ystep = Math.Abs(ray.Y / ray.X);
+            float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
+            float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
+            
+            //float deltaDistX = Math.Abs(raydir.X / raydir.Y);
+            //float deltaDistY = Math.Abs(raydir.Y / raydir.X);
 
             int mapY = mPlayerMapPos.Y;
             int mapX = mPlayerMapPos.X;
@@ -133,8 +137,8 @@ namespace MonoGamePlayground
             float intraCellPositionY;
             float intraCellPositionX;
             
-            float xstart;
-            float ystart;
+            float sideDistX;
+            float sideDistY;
 
             int mapStepX;
             int mapStepY;
@@ -142,63 +146,63 @@ namespace MonoGamePlayground
             int mapDrawOffSetX = 0;
             int mapDrawOffSetY = 0;
 
-            if (ray.X < 0)
+            if (raydir.X < 0)
             {
-                xstep *= -1;
+                //deltaDistX *= -1;
                 mapStepX = -1;
                 intraCellPositionX = mPlayerPos.X - mPlayerMapPos.X;
             }
             else
             {
                 mapStepX = 1;
-                intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
+                //intraCellPositionX = 1 - (mPlayerPos.X - mPlayerMapPos.X);
+                intraCellPositionX = (mPlayerMapPos.X + 1.0f - mPlayerPos.X);
                 mapDrawOffSetX = 1;
             }
             
-            if (ray.Y < 0)
+            if (raydir.Y < 0)
             {
-                ystep *= -1;
+                //deltaDistY *= -1;
                 mapStepY = -1;
                 intraCellPositionY = mPlayerPos.Y - mPlayerMapPos.Y;
             }
             else
             {
                 mapStepY = 1;
-                intraCellPositionY = 1 - (mPlayerPos.Y - mPlayerMapPos.Y);
+                intraCellPositionY = (mPlayerMapPos.Y + 1.0f - mPlayerPos.Y);
                 mapDrawOffSetY = 1;
             }
-            xstart = intraCellPositionY * xstep;
-            ystart = intraCellPositionX * ystep;
-            
-            Display("xstep", xstep.ToString());
-            Display("ystep", ystep.ToString());
-            
+            sideDistX = intraCellPositionX * deltaDistX;
+            sideDistY = intraCellPositionY * deltaDistY;
+
             //DrawSteps(xstart, ystart, mapX + mapDrawOffSetX, mapY + mapDrawOffSetY);
 
             bool northSouthSide;
             bool hitWall = false;
             while (!hitWall)
             {
-                if (Math.Abs(xstart) < Math.Abs(ystart))
+                Vector2 nextCollision;
+                if (sideDistX < sideDistY)
                 {
-                    var nextCollision = new Vector2(mPlayerPos.X + xstart, mapY + mapDrawOffSetY);
-                    mRedPoints.Add(nextCollision);
+                    //nextCollision = new Vector2(mPlayerPos.X + sideDistX, mapY + mapDrawOffSetY);
+                    //mRedPoints.Add(nextCollision);
                     // move in Y Direction
-                    mapY += mapStepY;
+                    mapX += mapStepX;
                     northSouthSide = true;
-                    xstart += xstep;
+                    sideDistX += deltaDistX;
                 }
-                
                 else
                 {
                     // move in X Direction
-                    var nextCollision = new Vector2(mapX + mapDrawOffSetX, mPlayerPos.Y + ystart);
-                    mGreenPoints.Add(nextCollision);
-                    mapX += mapStepX;
+                    //nextCollision = new Vector2(mapX + mapDrawOffSetX, mPlayerPos.Y + sideDistY);
+                    //mGreenPoints.Add(nextCollision);
+
+                    mapY += mapStepY;
                     northSouthSide = false;
-                    ystart += ystep;
+                    sideDistY += deltaDistY;
                 }
                 
+                mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
                 
                 if (GetMapAt(mapX, mapY) > 0)
                 {
