@@ -9,7 +9,8 @@ namespace MonoGamePlayground
     public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions, MultipleRaysWithCollisions, MultipleRays, MultipleRaysWithFishEyeCorrection }
     public static class Extensions
     {
-        public static int UnitSize = 64;
+        // how many pixel are the size of one map grid unit? pixel to map grid conversion uses this
+        public static int UnitSize = 64;    
         public static Vector2 ToScreen(this Vector2 value)
         {
             return value * UnitSize;
@@ -17,6 +18,10 @@ namespace MonoGamePlayground
     }
     public class Raycaster : Game
     {
+        private int mMapWidth = 10;
+        private int mMapHeight = 10;
+        private float mFoVInDegrees = 66.0f;
+        
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
         private DebugDrawer mDrawer;
@@ -24,8 +29,6 @@ namespace MonoGamePlayground
 
         private KeyboardState mOldKeyboardState;
         
-        private int mMapWidth = 10;
-        private int mMapHeight = 10;
         private int mScreenWidth;
         private int mScreenHeight;
         private Vector2 mPlayerPixelPos;
@@ -62,8 +65,7 @@ namespace MonoGamePlayground
         public int RayCount { get; set; }
         private int mRayCountNeeded;
         private Wallhit[] mWallHits;
-        private float mFov = 66.0f;
-        private Color[] mColorMap = new[] { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen };
+        private Color[] mColorMap = { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen };
 
         public Raycaster()
         {
@@ -101,11 +103,6 @@ namespace MonoGamePlayground
                 for (int y = 0; y < mMapHeight; y++)
                 {
                     var value = -1;
-                    /*if (x == 0 || y == 0 || x == mMapWidth - 1 || y == mMapHeight - 1)
-                    {
-                        value = 0;
-                    }
-                    */
                     SetMapAt(x, y, value);
                 }
             }
@@ -118,6 +115,18 @@ namespace MonoGamePlayground
             
             SetMapAt(5, 6, 1);
             SetMapAt(6, 7, 2);
+        }
+
+        private void SetMapAt(int x, int y, int value)
+        {
+            mMap[y * mMapWidth + x] = value;
+        }
+
+        private int GetMapAt(int x, int y)
+        {
+            if (x < 0 || x >= mMapWidth || y < 0 || y >= mMapHeight)
+                return 0;
+            return mMap[y * mMapWidth + x];
         }
 
         private void NextDisplayMode()
@@ -192,19 +201,7 @@ namespace MonoGamePlayground
 
             mWallHits = new Wallhit[RayCount];
         }
-
-        private void SetMapAt(int x, int y, int value)
-        {
-            mMap[y * mMapWidth + x] = value;
-        }
-
-        private int GetMapAt(int x, int y)
-        {
-            if (x < 0 || x >= mMapWidth || y < 0 || y >= mMapHeight)
-                return 1;
-            return mMap[y * mMapWidth + x];
-        }
-
+        
         protected override void LoadContent()
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
@@ -350,7 +347,7 @@ namespace MonoGamePlayground
                 if (DoFishEyeCorrection)
                 {
                     // Fish-eye correction
-                    var rayAngle = ((mFov * 0.5f) * Math.PI) / 180.0f; // between playerDir and rayDir in radians
+                    var rayAngle = ((mFoVInDegrees * 0.5f) * Math.PI) / 180.0f; // between playerDir and rayDir in radians
                     // cameraX(-1) -> : -fov/2
                     perpWallDist *= Math.Cos(rayAngle * cameraX);
                 }
@@ -486,9 +483,9 @@ namespace MonoGamePlayground
 
         private void DrawGrid()
         {
-            for (int x = 0; x < 640; x += mUnitSize)
+            for (int x = 0; x < mScreenWidth; x += mUnitSize)
             {
-                for (int y = 0; y < 640; y += mUnitSize)
+                for (int y = 0; y < mScreenHeight; y += mUnitSize)
                 {
                     mDrawer.DrawSegment(new Vector2(x, 0), new Vector2(x, mScreenHeight), Color.Gray);
                     mDrawer.DrawSegment(new Vector2(0, y), new Vector2(mScreenWidth, y), Color.Gray);
@@ -513,8 +510,6 @@ namespace MonoGamePlayground
                             mDrawer.DrawSegment(new Vector2(xOffset, minY).ToScreen(),
                                 new Vector2(xOffset, maxY).ToScreen(), mColorMap[textureIndex]);
                         }
-
-                        //mDrawer.DrawPoint(new Vector2(pointX, pointY).ToScreen(), mColorMap[textureIndex]);
                     }
                 }
             }
@@ -619,13 +614,13 @@ namespace MonoGamePlayground
         
         private void UpdateCameraPlane()
         {
-            float camwidth = (float)Math.Tan(MathHelper.ToRadians(mFov) / 2);
+            float camwidth = (float)Math.Tan(MathHelper.ToRadians(mFoVInDegrees) / 2);
             mCameraProjectionPlane = Vector2.Normalize(new Vector2(-mPlayerDir.Y, mPlayerDir.X)) * camwidth;
         }
     }
 
     internal struct Wallhit
-    {
+    { 
         public int Height { get; set; }
         public bool SideIsEastWestSide { get; set; }
         public double Distance { get; set; }
