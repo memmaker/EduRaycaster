@@ -61,7 +61,7 @@ namespace MonoGamePlayground
         private int mRayCountNeeded;
         private Wallhit[] mWallHits;
         private float mFov = 66.0f;
-        private Color[] mColorMap = new[] { Color.Crimson, Color.Coral, Color.Navy, Color.ForestGreen };
+        private Color[] mColorMap = new[] { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen };
 
         public Raycaster()
         {
@@ -110,8 +110,8 @@ namespace MonoGamePlayground
 
             SetMapAt(4, 1, 1);
             SetMapAt(4, 2, 2);
-            SetMapAt(4, 3, 2);
-            SetMapAt(3, 3, 3);
+            SetMapAt(4, 3, 0);
+            SetMapAt(3, 3, 0);
             SetMapAt(2, 3, 3);
             
             SetMapAt(5, 6, 1);
@@ -491,9 +491,23 @@ namespace MonoGamePlayground
                     var textureIndex = GetMapAt(xGrid, yGrid);
                     if (textureIndex > -1)
                     {
-                        float pointX = xGrid + 0.5f;
-                        float pointY = yGrid + 0.5f;
-                        mDrawer.DrawPoint(new Vector2(pointX, pointY).ToScreen(), mColorMap[textureIndex]);
+                        float minX = xGrid;
+                        float minY = yGrid;
+                        float maxX = xGrid + 1.0f;
+                        float maxY = yGrid + 1.0f;
+                        for (float yOffset = minY; yOffset <= maxY; yOffset += 0.1f)
+                        {
+                            mDrawer.DrawSegment(new Vector2(minX, yOffset).ToScreen(),
+                                new Vector2(maxX, yOffset).ToScreen(), mColorMap[textureIndex]);
+                        }
+                        
+                        for (float xOffset = minX; xOffset <= maxX; xOffset += 0.1f)
+                        {
+                            mDrawer.DrawSegment(new Vector2(xOffset, minY).ToScreen(),
+                                new Vector2(xOffset, maxY).ToScreen(), mColorMap[textureIndex]);
+                        }
+
+                        //mDrawer.DrawPoint(new Vector2(pointX, pointY).ToScreen(), mColorMap[textureIndex]);
                     }
                 }
             }
