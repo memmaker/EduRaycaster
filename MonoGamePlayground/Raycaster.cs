@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
 namespace MonoGamePlayground
 {
-    public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions, MultipleRaysWithCollisions, MultipleRays, MultipleRaysWithFishEyeCorrection }
+    public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions, MultipleRaysWithCollisions, MultipleRays, MultipleRaysWithFishEyeCorrection, AllOn }
     public static class Extensions
     {
         // how many pixel are the size of one map grid unit? pixel to map grid conversion uses this
@@ -61,12 +62,19 @@ namespace MonoGamePlayground
         
         public bool TankControls { get; set; }
         
+        public bool ShowDebugText { get; set; }
         public bool DoFishEyeCorrection { get; set; }
         public int RayCount { get; set; }
+        
+        public bool ShowTextures { get; set; }
+        
         private int mRayCountNeeded;
-        private Wallhit[] mWallHits;
+        private WallSegmentInfo[] mWallHits;
         private Color[] mColorMap = { Color.Crimson, Color.Coral, Color.Bisque, Color.ForestGreen };
-
+        private Rectangle mDestinationOnScreenRect;
+        private Rectangle mTextureSegmentRect;
+        private Texture2D[] mWallTextures;
+        
         public Raycaster()
         {
             RayCount = 1;
@@ -81,7 +89,7 @@ namespace MonoGamePlayground
             _graphics.ApplyChanges();
 
             mRayCountNeeded = mScreenWidth;
-            mWallHits = new Wallhit[mScreenWidth];
+            mWallHits = new WallSegmentInfo[mScreenWidth];
             
             Content.RootDirectory = "Content";
             IsMouseVisible = true;
@@ -94,7 +102,15 @@ namespace MonoGamePlayground
 
             Window.Title = "EduRaycaster";
             Window.AllowUserResizing = false;
-            
+
+            mWallTextures = new[]
+            {
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/SmoothStone.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Dirt.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/Bricks.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/BrickOv.png"),
+                Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/bookshelf.png"),
+            };
             LoadMap();
         }
 
@@ -144,6 +160,7 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = false;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.MultipleRays:
@@ -153,6 +170,7 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = true;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = mRayCountNeeded;
                     break;
                 case DisplayMode.MultipleRaysWithFishEyeCorrection:
@@ -162,6 +180,17 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = true;
                     DoFishEyeCorrection = true;
+                    ShowTextures = false;
+                    RayCount = mRayCountNeeded;
+                    break;
+                case DisplayMode.AllOn:
+                    ShowPreCalcSteps = false;
+                    ShowEqualDistanceSteps = false;
+                    ShowCollisionPoints = false;
+                    ShowGridSteps = false;
+                    ShowCameraPlane = true;
+                    DoFishEyeCorrection = true;
+                    ShowTextures = true;
                     RayCount = mRayCountNeeded;
                     break;
                 case DisplayMode.MultipleRaysWithCollisions:
@@ -171,6 +200,7 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = true;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = 4;
                     break;
                 case DisplayMode.Precalculations:
@@ -180,6 +210,7 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = false;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.EqualDistanceSteps:
@@ -189,6 +220,7 @@ namespace MonoGamePlayground
                     ShowGridSteps = false;
                     ShowCameraPlane = false;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = 1;
                     break;
                 case DisplayMode.Collisions:
@@ -198,11 +230,12 @@ namespace MonoGamePlayground
                     ShowGridSteps = true;
                     ShowCameraPlane = false;
                     DoFishEyeCorrection = false;
+                    ShowTextures = false;
                     RayCount = 1;
                     break;
             }
 
-            mWallHits = new Wallhit[RayCount];
+            mWallHits = new WallSegmentInfo[RayCount];
         }
         
         protected override void LoadContent()
@@ -216,11 +249,14 @@ namespace MonoGamePlayground
             HandleInput();
 
             Raycast();
-            
-            Display("PlayerPos", mPlayerPos.ToString());
-            Display("PlayerMapPos", mPlayerMapPos.ToString());
-            Display("PlayerDir", mPlayerDir.ToString());
-            
+
+            if (ShowDebugText)
+            {
+                Display("PlayerPos", mPlayerPos.ToString());
+                Display("PlayerMapPos", mPlayerMapPos.ToString());
+                Display("PlayerDir", mPlayerDir.ToString());
+            }
+
             base.Update(gameTime);
         }
 
@@ -234,18 +270,20 @@ namespace MonoGamePlayground
             mPoints.Clear();
             
             Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
-
             for (int columnOnScreen = 0; columnOnScreen < RayCount; columnOnScreen++)
             {
                 float cameraX = ((2.0f * columnOnScreen) / (RayCount-1)) - 1.0f; // x-coordinate in camera space -1..1
                 
+                // 1. Richtung der Strahlen festlegen
                 if (RayCount > 1)
                 {
                     raydir = Vector2.Normalize(mPlayerDir + (mCameraProjectionPlane * cameraX));
                 }
-
+                
+                // 2. Die sich wiederholenden Strahlenteile für Schritte in X und Y Richtung berechnen
                 float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
                 float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
+                
                 
                 int mapX = mPlayerMapPos.X;
                 int mapY = mPlayerMapPos.Y;
@@ -258,7 +296,11 @@ namespace MonoGamePlayground
 
                 int mapStepX;
                 int mapStepY;
-
+                
+                // 3. Anhand der Richtung des Strahls folgende Werte berechnen
+                //     - Die Schrittrichtung auf der Karte (je Quadrant)
+                //     - Die Position innerhalb der aktuellen Zelle
+                //     - Die Startteile der beiden Strahlen für X und Y Schritte
                 if (raydir.X < 0)
                 {
                     mapStepX = -1;
@@ -292,6 +334,10 @@ namespace MonoGamePlayground
                 Vector2 nextCollision = Vector2.Zero;
                 int textureIndex = -1;
                 
+                // 4. Schrittweise die Strahlen verlängern, immer der kürzeste zuerst
+                //    - Die Kartenposition wird aktualisiert
+                //    - Die Wandrichtung (Nord/Süd vs. Ost/west) wird gesetzt
+                //    - Der Strahl wird verlängert
                 while (!hitWall)
                 {
                     if (sideDistX < sideDistY)
@@ -329,14 +375,16 @@ namespace MonoGamePlayground
                     }
 
                     if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
-
+                    
+                    // 5. Prüfen wir ob auf eine Wand getroffen sind
                     textureIndex = GetMapAt(mapX, mapY);
                     if (textureIndex > -1)
                     {
                         hitWall = true;
                     }
                 }
-
+                
+                // 6. Den Abstand zur Wand berechnen
                 double perpWallDist;
                 if (eastWestSide)
                 {
@@ -346,7 +394,8 @@ namespace MonoGamePlayground
                 {
                     perpWallDist = sideDistY - deltaDistY;
                 }
-
+                
+                // 6.1 Den korrigierten Abstand zur Wand berechnen
                 if (DoFishEyeCorrection)
                 {
                     // Fish-eye correction
@@ -354,14 +403,25 @@ namespace MonoGamePlayground
                     // cameraX(-1) -> : -fov/2
                     perpWallDist *= Math.Cos(rayAngle * cameraX);
                 }
-
-                int lineHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
-                mWallHits[columnOnScreen] = new Wallhit()
+                
+                // 7. Die Höhe des Wandsegments und beliebige andere Parameter zum Zeichnen ermitteln
+                int wallHeight = (int)Math.Abs(mScreenHeight / perpWallDist);
+                
+                double wallX; //where exactly the wall was hit
+                if (eastWestSide) wallX = mPlayerPos.Y + perpWallDist * raydir.Y;
+                else wallX = mPlayerPos.X + perpWallDist * raydir.X;
+                
+                wallX -= Math.Floor(wallX);
+                int textureX = (int)(wallX * mWallTextures[textureIndex].Width);
+                
+                mWallHits[columnOnScreen] = new WallSegmentInfo()
                 {
-                    Height = lineHeight,
+                    Height = wallHeight,
                     SideIsEastWestSide = eastWestSide,
                     Distance = perpWallDist,
-                    Texture = textureIndex
+                    Texture = textureIndex,
+                    TexX = textureX,
+                    ColumnOnScreenX = columnOnScreen
                 };
                 
                 // lastcollision = end of the ray
@@ -411,13 +471,16 @@ namespace MonoGamePlayground
             GraphicsDevice.Clear(Color.Black);
 
             Draw2DView();
-
+            
+            _spriteBatch.Begin();
+            
             Draw3DView();
             
+            if (ShowDebugText) TextDraw();
+            
+            _spriteBatch.End();
+            
             mDrawer.FlushDrawing();
-            
-            TextDraw();
-            
             base.Draw(gameTime);
         }
 
@@ -470,20 +533,62 @@ namespace MonoGamePlayground
             for (var columnX = 0; columnX < mWallHits.Length; columnX++)
             {
                 var wallHit = mWallHits[columnX];
-                var height = wallHit.Height;
-                var center = mScreenHeight/2;
-                var baseColor = mColorMap[wallHit.Texture];
-                if (wallHit.SideIsEastWestSide)
+
+                if (ShowTextures)
                 {
-                    baseColor *= 0.7f;
+                    DrawTextured(wallHit);
                 }
-                mDrawer.DrawSegment(
-                    new Vector2(mScreenWidth + columnX, center - (height/2)),
-                    new Vector2(mScreenWidth + columnX, center + (height/2)),
-                    baseColor);
+                else
+                {
+                    DrawColored(wallHit);
+                }
             }
         }
 
+        private void DrawColored(WallSegmentInfo wallHit)
+        {
+            int columnX = wallHit.ColumnOnScreenX;
+            var height = wallHit.Height;
+            var center = mScreenHeight / 2;
+            var baseColor = mColorMap[wallHit.Texture];
+            if (wallHit.SideIsEastWestSide)
+            {
+                baseColor *= 0.7f;
+            }
+
+            mDrawer.DrawSegment(
+                new Vector2(mScreenWidth + columnX, center - (height / 2)),
+                new Vector2(mScreenWidth + columnX, center + (height / 2)),
+                baseColor);
+        }
+
+        private void DrawTextured(WallSegmentInfo wallHit)
+        {
+            var texIndex = wallHit.Texture;
+            Texture2D texture = mWallTextures[texIndex];
+            int texX = wallHit.TexX;
+            
+            var center = mScreenHeight/2;
+            var wallHeight = wallHit.Height;
+            var xOnScreen = wallHit.ColumnOnScreenX;
+            
+            mTextureSegmentRect.X = texX;
+            mTextureSegmentRect.Y = 0;
+            mTextureSegmentRect.Width = 1;
+            mTextureSegmentRect.Height = texture.Height;
+
+            mDestinationOnScreenRect.X = mScreenWidth + xOnScreen;
+            mDestinationOnScreenRect.Y = center - (wallHeight/2);
+            mDestinationOnScreenRect.Width = 1;
+            mDestinationOnScreenRect.Height = wallHeight;
+            
+            Color drawColor = Color.White;
+
+            if (wallHit.SideIsEastWestSide)
+                drawColor = Color.Lerp(drawColor, Color.Black, 0.2f);
+
+            _spriteBatch.Draw(texture, mDestinationOnScreenRect, mTextureSegmentRect, drawColor, 0f, Vector2.Zero, SpriteEffects.None, 0.9f);
+        }
         private void DrawGrid()
         {
             for (int x = 0; x < mScreenWidth; x += mUnitSize)
@@ -531,7 +636,6 @@ namespace MonoGamePlayground
         }
         private void TextDraw()
         {
-            _spriteBatch.Begin();
             Vector2 drawPos = Vector2.Zero;
             var lineHeight = mFont.MeasureString("XMI").Y;
             foreach (var kvp in mDebugInfo)
@@ -541,7 +645,6 @@ namespace MonoGamePlayground
                 _spriteBatch.DrawString(mFont, line, drawPos + Vector2.One, Color.White);
                 drawPos += Vector2.UnitY * lineHeight;
             }
-            _spriteBatch.End();
         }
         
         private void HandleInput()
@@ -559,6 +662,22 @@ namespace MonoGamePlayground
             if (keyboardState.IsKeyDown(Keys.T) && mOldKeyboardState.IsKeyUp(Keys.T))
             {
                 TankControls = !TankControls;
+            }
+            
+            if (keyboardState.IsKeyDown(Keys.N) && mOldKeyboardState.IsKeyUp(Keys.N))
+            {
+                mFoVInDegrees -= 1.0f;
+                Display("FoV", mFoVInDegrees.ToString(CultureInfo.InvariantCulture));
+            }
+            
+            if (keyboardState.IsKeyDown(Keys.M) && mOldKeyboardState.IsKeyUp(Keys.M))
+            {
+                mFoVInDegrees += 1.0f;
+                Display("FoV", mFoVInDegrees.ToString(CultureInfo.InvariantCulture));
+            }
+            if (keyboardState.IsKeyDown(Keys.R) && mOldKeyboardState.IsKeyUp(Keys.R))
+            {
+                ShowDebugText = !ShowDebugText;
             }
             
             var move = Vector2.Zero;
@@ -595,6 +714,7 @@ namespace MonoGamePlayground
             }
 
             mPlayerDir = Vector2.Transform(mPlayerDir, rotationMatrix);
+            
             UpdateCameraPlane();
 
             if (TankControls)
@@ -622,11 +742,13 @@ namespace MonoGamePlayground
         }
     }
 
-    internal struct Wallhit
+    internal struct WallSegmentInfo
     { 
         public int Height { get; set; }
         public bool SideIsEastWestSide { get; set; }
         public double Distance { get; set; }
         public int Texture { get; set; }
+        public int TexX { get; set; }
+        public int ColumnOnScreenX { get; set; }
     }
 }

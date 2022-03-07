@@ -20,3 +20,17 @@
 /processorParam:TextureFormat=Compressed
 /build:Fonts/Default.spritefont;Fonts/Default.spritefont
 
+#begin Textures/bookshelf.png
+/copy:Textures/bookshelf.png
+
+#begin Textures/BrickOv.png
+/copy:Textures/BrickOv.png
+
+#begin Textures/Bricks.png
+/copy:Textures/Bricks.png
+
+#begin Textures/Dirt.png
+/copy:Textures/Dirt.png
+
+#begin Textures/SmoothStone.png
+/copy:Textures/SmoothStone.png
