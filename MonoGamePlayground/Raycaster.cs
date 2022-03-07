@@ -365,12 +365,6 @@ namespace MonoGamePlayground
                 };
                 
                 // lastcollision = end of the ray
-                Vector2 sourceOfRay = mPlayerPos;
-                /*if (RayCount > 1 && DoFishEyeCorrection)
-                {
-                    sourceOfRay = mPlayerPos + (mCameraProjectionPlane * cameraX);
-                }
-                */
                 if (ShowCameraPlane)
                 {
                     mBlueLines.Add(new Tuple<Vector2, Vector2>(
@@ -378,10 +372,11 @@ namespace MonoGamePlayground
                         mPlayerPos + (mCameraProjectionPlane * 1.0f)
                     ));
                 }
-                Vector2 targetOfRay = nextCollision;
+                
+                // The ray itself
                 mBlueLines.Add(new Tuple<Vector2, Vector2>(
-                    sourceOfRay,
-                    targetOfRay
+                    mPlayerPos,
+                    nextCollision
                 ));
             }
         }
@@ -410,47 +405,12 @@ namespace MonoGamePlayground
                 new Vector2(mPlayerPos.X, firstCollisionY.Y)
             ));
         }
-
-
+        
         protected override void Draw(GameTime gameTime)
         {
             GraphicsDevice.Clear(Color.Black);
 
-            // Draw Grid
-            DrawGrid();
-            
-            // Player
-            mDrawer.DrawPoint(mPlayerPos.ToScreen(), Color.White);
-            
-            foreach (var line in mRedLines)
-            {
-                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.Red);
-            }
-            
-            foreach (var line in mGreenLines)
-            {
-                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.LightGreen);
-            }
-            
-            foreach (var line in mBlueLines)
-            {
-                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.LightBlue);
-            }
-            
-            foreach (var point in mPoints)
-            {
-                mDrawer.DrawPoint(point.ToScreen(), Color.White);
-            }
-            
-            foreach (var point in mRedPoints)
-            {
-                mDrawer.DrawPoint(point.ToScreen(), Color.Red);
-            }
-            
-            foreach (var point in mGreenPoints)
-            {
-                mDrawer.DrawPoint(point.ToScreen(), Color.LightGreen);
-            }
+            Draw2DView();
 
             Draw3DView();
             
@@ -459,6 +419,50 @@ namespace MonoGamePlayground
             TextDraw();
             
             base.Draw(gameTime);
+        }
+
+        private void Draw2DView()
+        {
+            // Draw Grid
+            DrawGrid();
+
+            // Player
+            mDrawer.DrawPoint(mPlayerPos.ToScreen(), Color.White);
+
+            DrawColoredLinesAndPoints();
+        }
+
+        private void DrawColoredLinesAndPoints()
+        {
+            foreach (var line in mRedLines)
+            {
+                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.Red);
+            }
+
+            foreach (var line in mGreenLines)
+            {
+                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.LightGreen);
+            }
+
+            foreach (var line in mBlueLines)
+            {
+                mDrawer.DrawSegment(line.Item1.ToScreen(), line.Item2.ToScreen(), Color.LightBlue);
+            }
+
+            foreach (var point in mPoints)
+            {
+                mDrawer.DrawPoint(point.ToScreen(), Color.White);
+            }
+
+            foreach (var point in mRedPoints)
+            {
+                mDrawer.DrawPoint(point.ToScreen(), Color.Red);
+            }
+
+            foreach (var point in mGreenPoints)
+            {
+                mDrawer.DrawPoint(point.ToScreen(), Color.LightGreen);
+            }
         }
 
         private void Draw3DView()
