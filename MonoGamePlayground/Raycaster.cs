@@ -282,17 +282,23 @@ namespace MonoGamePlayground
             mPoints.Clear();
             
             Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
+            
             for (int columnOnScreen = 0; columnOnScreen < RayCount; columnOnScreen++)
             {
-                float cameraX = ((2.0f * columnOnScreen) / (RayCount-1)) - 1.0f; // x-coordinate in camera space -1..1
+                float cameraX = ((2.0f * columnOnScreen) / (RayCount-1)) - 1.0f; // X-Koordinate in der Kameraebene -1..1
                 
                 // 1. Richtung der Strahlen festlegen
                 if (RayCount > 1)
                 {
+                    // Vektoraddition und Skalierung:
+                    // Richtung in die wir schauen plus anteilige Abweichung nach rechts bzw. links
                     raydir = Vector2.Normalize(mPlayerDir + (mCameraProjectionPlane * cameraX));
                 }
                 
                 // 2. Die sich wiederholenden Strahlenteile für Schritte in X und Y Richtung berechnen
+                //    - Steigung des Richtungsvektors und ein Schritt in X bzw. Y Richtung 
+                //    - Satz des Pythagoras mit a = 1 und b = ray.y / ray.x für einen Schritt in die X-Richtung
+                //    - Satz des Pythagoras mit a = 1 und b = ray.x / ray.y für einen Schritt in die Y-Richtung
                 float deltaDistX = (float) Math.Sqrt(1 + (raydir.Y * raydir.Y) / (raydir.X * raydir.X));
                 float deltaDistY = (float) Math.Sqrt(1 + (raydir.X * raydir.X) / (raydir.Y * raydir.Y));
                 
@@ -312,7 +318,7 @@ namespace MonoGamePlayground
                 // 3. Anhand der Richtung des Strahls folgende Werte berechnen
                 //     - Die Schrittrichtung auf der Karte (je Quadrant)
                 //     - Die Position innerhalb der aktuellen Zelle
-                //     - Die Startteile der beiden Strahlen für X und Y Schritte
+                //     - Die anteiligen Startteile der beiden Strahlen für X und Y Schritte
                 if (raydir.X < 0)
                 {
                     mapStepX = -1;
@@ -388,7 +394,7 @@ namespace MonoGamePlayground
 
                     if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
                     
-                    // 5. Prüfen wir ob auf eine Wand getroffen sind
+                    // 5. Prüfen wir ob eine Wand getroffen wurde
                     textureIndex = GetMapAt(mapX, mapY);
                     if (textureIndex > -1)
                     {
@@ -396,7 +402,8 @@ namespace MonoGamePlayground
                     }
                 }
                 
-                // 6. Den Abstand zur Wand berechnen
+                // 6. Den Abstand zur Wand berechnen (Im Prinzip den letzten Schritt rückgängig machen)
+                // Vektoren subtrahieren
                 double perpWallDist;
                 if (eastWestSide)
                 {
@@ -408,15 +415,17 @@ namespace MonoGamePlayground
                 }
                 
                 // 6.1 Die original Distanz zur Wand für das Texture Mapping verwenden
-                double wallX; //where exactly the wall was hit
-                if (eastWestSide) wallX = mPlayerPos.Y + perpWallDist * raydir.Y;
-                else wallX = mPlayerPos.X + perpWallDist * raydir.X;
-                wallX -= Math.Floor(wallX);
+                double wallX; // X Position an der wir die Wand getroffen haben
+                // Komponentenweise Vektoraddition und Skalierung
+                if (eastWestSide) wallX = mPlayerPos.Y + (perpWallDist * raydir.Y);
+                else wallX = mPlayerPos.X + (perpWallDist * raydir.X);
+                wallX -= Math.Floor(wallX); // Uns interessieren nur die Nachkommastellen
                 int textureX = (int)(wallX * mWallTextures[textureIndex].Width);
                 
                 // 6.2 Den korrigierten Abstand zur Wand berechnen
                 if (DoFishEyeCorrection)
                 {
+                    // Kosinus eines Winkels = Ankathete des Winkels / Hypotenuse
                     // Fish-eye correction
                     var rayAngle = ((mFoVInDegrees * 0.5f) * Math.PI) / 180.0f; // between playerDir and rayDir in radians
                     // cameraX(-1) -> : -fov/2
