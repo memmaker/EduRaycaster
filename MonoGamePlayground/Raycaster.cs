@@ -807,6 +807,9 @@ namespace MonoGamePlayground
             List<Rectangle> blockingTiles = GetBlockingNeighbors(intendedPosition / mUnitSize);
             mCurrentIntersection = IntersectionType.NoIntersection;
             // Kollisionen mit möglichen Nachbarfeldern
+            Vector2 correctionVectorWalls = Vector2.Zero;
+            Vector2 correctionVectorCorners = Vector2.Zero;
+            
             foreach (Rectangle collisionRect in blockingTiles)
             {
                 var collisionInfo = Intersects(
@@ -818,15 +821,34 @@ namespace MonoGamePlayground
 
                 var nextIntersection = collisionInfo.Type;
                 
-                if (nextIntersection != IntersectionType.NoIntersection)
+                if (nextIntersection == IntersectionType.IntersectionOnX || nextIntersection == IntersectionType.IntersectionOnY)
                 {
                     mCurrentIntersection = nextIntersection;
-                    newPos = newPos + (collisionInfo.ContactNormal * collisionInfo.Depth);
+                    correctionVectorWalls += collisionInfo.ContactNormal * collisionInfo.Depth;
+                    Display("Depth", collisionInfo.Depth.ToString());
+                    Display("Normal", collisionInfo.ContactNormal.ToPrettyString());
+                }
+                else if (nextIntersection == IntersectionType.IntersectionOnCorner)
+                {
+                    mCurrentIntersection = nextIntersection;
+                    correctionVectorCorners = collisionInfo.ContactNormal * collisionInfo.Depth;
                     Display("Depth", collisionInfo.Depth.ToString());
                     Display("Normal", collisionInfo.ContactNormal.ToPrettyString());
                 }
             }
-           
+            Vector2 realCorrectionVector;
+            
+            if (correctionVectorWalls != Vector2.Zero)
+            {
+                realCorrectionVector = correctionVectorWalls;
+            }
+            else
+            {
+                realCorrectionVector = correctionVectorCorners;
+            }
+            
+            newPos = newPos + realCorrectionVector;
+            
             return newPos;
         }
 
@@ -865,6 +887,7 @@ namespace MonoGamePlayground
             var cornerDistanceSq = 
                 Math.Pow(circleDistanceX - rectWidth/2, 2) +
                 Math.Pow(circleDistanceY - rectHeight/2, 2);
+            
 
             var cornerCaseIntersection = (cornerDistanceSq <= (circleRadius * circleRadius));
             
