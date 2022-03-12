@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Color = Microsoft.Xna.Framework.Color;
+using Point = Microsoft.Xna.Framework.Point;
+using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace MonoGamePlayground
 {
@@ -56,6 +60,8 @@ namespace MonoGamePlayground
         
         private List<Vector2> mGreenPoints = new List<Vector2>();
         private List<Vector2> mRedPoints = new List<Vector2>();
+
+        private List<Tuple<Vector2, float>> mCircles = new List<Tuple<Vector2, float>>();
         
         private int[] mMap;
         private Vector2 mCameraProjectionPlane;
@@ -71,6 +77,7 @@ namespace MonoGamePlayground
         
         public bool ShowDebugText { get; set; }
         public bool DoFishEyeCorrection { get; set; }
+        public bool DoCollisionsWithMap { get; set; }
         public int RayCount { get; set; }
         
         public bool ShowTextures { get; set; }
@@ -82,6 +89,11 @@ namespace MonoGamePlayground
         private Rectangle mTextureSegmentRect;
         private Texture2D[] mWallTextures;
         
+        private List<Point> mRelativeNeighbors = new List<Point>() { new Point(-1, 0), new Point(1, 0), new Point(0, -1), new Point(0, 1), new Point(1, -1), new Point(-1, 1), new Point(-1, -1), new Point(1, 1) };
+        private float mPlayerCollisionRadius = 0.2f;
+        private IntersectionType mCurrentIntersection;
+        private IntersectionType mLastAxisIntersection;
+
         public Raycaster()
         {
             RayCount = 1;
@@ -102,6 +114,7 @@ namespace MonoGamePlayground
             IsMouseVisible = true;
 
             mPlayerPixelPos = new Vector2(mScreenWidth / 2.0f, mScreenHeight / 2.0f);
+            mPlayerPos = mPlayerPixelPos / mUnitSize;
             mPlayerDir = new Vector2(2, 1);
             mPlayerDir.Normalize();
             
@@ -120,6 +133,8 @@ namespace MonoGamePlayground
                 Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/felix.png"),
             };
             LoadMap();
+
+            DoCollisionsWithMap = true;
         }
 
         private void LoadMap()
@@ -267,8 +282,14 @@ namespace MonoGamePlayground
                 Display("PlayerPos", mPlayerPos.ToPrettyString());
                 Display("PlayerMapPos", mPlayerMapPos.ToString());
                 Display("PlayerDir", mPlayerDir.ToPrettyString());
+                Display("Intersection", mCurrentIntersection.ToString());
             }
-
+            
+            if (DoCollisionsWithMap)
+            {
+                mCircles.Clear();
+                mCircles.Add(new Tuple<Vector2, float>(mPlayerPixelPos, mPlayerCollisionRadius * mUnitSize));
+            }
             base.Update(gameTime);
         }
 
@@ -512,7 +533,7 @@ namespace MonoGamePlayground
 
             // Player
             mDrawer.DrawPoint(mPlayerPos.ToScreen(), Color.White);
-
+            
             DrawColoredLinesAndPoints();
         }
 
@@ -546,6 +567,11 @@ namespace MonoGamePlayground
             foreach (var point in mGreenPoints)
             {
                 mDrawer.DrawPoint(point.ToScreen(), Color.LightGreen);
+            }
+
+            foreach (var tuple in mCircles)
+            {
+                mDrawer.DrawCircle(tuple.Item1, tuple.Item2, Color.White);
             }
         }
 
@@ -716,25 +742,26 @@ namespace MonoGamePlayground
                 ShowDebugText = !ShowDebugText;
             }
             
-            var move = Vector2.Zero;
+            var moveDirection = Vector2.Zero;
+            
             if (keyboardState.IsKeyDown(Keys.A))
             {
-                move -= Vector2.UnitX;
+                moveDirection -= Vector2.UnitX;
             }
 
             if (keyboardState.IsKeyDown(Keys.D))
             {
-                move += Vector2.UnitX;
+                moveDirection += Vector2.UnitX;
             }
 
             if (keyboardState.IsKeyDown(Keys.W))
             {
-                move -= Vector2.UnitY;
+                moveDirection -= Vector2.UnitY;
             }
 
             if (keyboardState.IsKeyDown(Keys.S))
             {
-                move += Vector2.UnitY;
+                moveDirection += Vector2.UnitY;
             }
 
             float rotateAmount = 2f;
@@ -751,31 +778,168 @@ namespace MonoGamePlayground
 
             mPlayerDir = Vector2.Transform(mPlayerDir, rotationMatrix);
             
-            UpdateCameraPlane();
-
-            if (TankControls)
-            {
-                mPlayerPixelPos += mPlayerDir * (-move.Y);
-            }
-            else
-            {
-                mPlayerPixelPos += move;
-            }
-            
-            mPlayerMapPos = new Point((int) mPlayerPixelPos.X / mUnitSize, (int) mPlayerPixelPos.Y / mUnitSize);
-            
-            mPlayerPos = new Vector2(
-                mPlayerPixelPos.X / mUnitSize,
-                mPlayerPixelPos.Y / mUnitSize);
+            MovePlayer(moveDirection);
 
             mOldKeyboardState = keyboardState;
         }
+
+        private void MovePlayer(Vector2 direction)
+        {
+            UpdateCameraPlane();
+            
+            Vector2 newPixelPosition = TankControls ? mPlayerPixelPos + mPlayerDir * (-direction.Y) : mPlayerPixelPos + direction;
+
+            if (DoCollisionsWithMap)
+            {
+                newPixelPosition = CollideWithMap(mPlayerPixelPos, newPixelPosition);
+            }
+
+            mPlayerPixelPos = newPixelPosition;
+            mPlayerPos = newPixelPosition / mUnitSize;
+            mPlayerMapPos = new Point((int) mPlayerPos.X, (int) mPlayerPos.Y);
+        }
+
+        public Vector2 CollideWithMap(Vector2 currentPosition, Vector2 intendedPosition)
+        {
+            Vector2 newPos = intendedPosition;
+            Vector2 velocity = intendedPosition - currentPosition;
+            Display("Velocity", velocity.ToString());
+            List<Rectangle> blockingTiles = GetBlockingNeighbors(intendedPosition / mUnitSize);
+            mCurrentIntersection = IntersectionType.NoIntersection;
+            // Kollisionen mit möglichen Nachbarfeldern
+            foreach (Rectangle collisionRect in blockingTiles)
+            {
+                var collisionInfo = Intersects(
+                    intendedPosition, 
+                    mPlayerCollisionRadius * mUnitSize,
+                    collisionRect.Center.ToVector2(),
+                    collisionRect.Width,
+                    collisionRect.Height);
+
+                var nextIntersection = collisionInfo.Type;
+                
+                if (nextIntersection != IntersectionType.NoIntersection)
+                {
+                    mCurrentIntersection = nextIntersection;
+                    newPos = newPos + (collisionInfo.ContactNormal * collisionInfo.Depth);
+                    Display("Depth", collisionInfo.Depth.ToString());
+                    Display("Normal", collisionInfo.ContactNormal.ToPrettyString());
+                }
+            }
+           
+            return newPos;
+        }
+
+        // Handle intersection between a circle and an axis-aligned rectangle with floating point precision
+        private CollisionInfo Intersects(Vector2 circleCenter, float circleRadius, Vector2 rectCenter, float rectWidth, float rectHeight)
+        {
+            var circleDistanceX = Math.Abs(circleCenter.X - rectCenter.X);  // distance between center of circle and rect on X axis
+            var circleDistanceY = Math.Abs(circleCenter.Y - rectCenter.Y);  // distance between center of circle and rect on Y axis
+
+            if (circleDistanceX > (rectWidth / 2 + circleRadius)) { return new CollisionInfo() {Type = IntersectionType.NoIntersection}; }
+            if (circleDistanceY > (rectHeight / 2 + circleRadius)) { return new CollisionInfo() {Type = IntersectionType.NoIntersection}; }
+            
+            var distanceX = (rectWidth / 2) - circleDistanceX;
+            var distanceY = (rectHeight / 2) - circleDistanceY;
+            
+            var NearestX = Math.Clamp(circleCenter.X, rectCenter.X - rectWidth / 2, rectCenter.X + rectWidth / 2);
+            var NearestY = Math.Clamp(circleCenter.Y, rectCenter.Y - rectHeight / 2, rectCenter.Y + rectHeight / 2); 
+            
+            var dist = new Vector2(circleCenter.X - NearestX, circleCenter.Y - NearestY);
+            var penetrationDepth = circleRadius - dist.Length();
+            
+            if (distanceX >= 0)
+            {
+                var contactNormalY = Vector2.Normalize(new Vector2(0, circleCenter.Y - rectCenter.Y));
+                return new CollisionInfo() {Type = IntersectionType.IntersectionOnX, Depth = penetrationDepth,
+                    ContactNormal = contactNormalY};
+            }
+
+            if (distanceY >= 0)
+            {
+                var contactNormalX = Vector2.Normalize(new Vector2(circleCenter.X - rectCenter.X, 0));
+                return new CollisionInfo() {Type = IntersectionType.IntersectionOnY, Depth = penetrationDepth, 
+                    ContactNormal = contactNormalX};
+            }
+
+            var cornerDistanceSq = 
+                Math.Pow(circleDistanceX - rectWidth/2, 2) +
+                Math.Pow(circleDistanceY - rectHeight/2, 2);
+
+            var cornerCaseIntersection = (cornerDistanceSq <= (circleRadius * circleRadius));
+            
+            if (cornerCaseIntersection)
+            {
+                Vector2 contactNormal = Vector2.Zero;
+                if (distanceX > distanceY)
+                {
+                    contactNormal = Vector2.Normalize(new Vector2(0, circleCenter.Y - rectCenter.Y));
+                }
+                else
+                {
+                    contactNormal = Vector2.Normalize(new Vector2(circleCenter.X - rectCenter.X, 0));
+                }
+                
+                return new CollisionInfo()
+                {
+                    Type = IntersectionType.IntersectionOnCorner,
+                    Depth = penetrationDepth,
+                    ContactNormal = contactNormal
+                };
+            }
+            else
+            { return new CollisionInfo() {Type = IntersectionType.NoIntersection,}; }
+        }
         
+        private List<Rectangle> GetBlockingNeighbors(Vector2 position)
+        {
+            List<Rectangle> neighborTiles = new List<Rectangle>();
+            Rectangle startTile = new Rectangle((int)Math.Floor(position.X) * mUnitSize, (int)Math.Floor(position.Y) * mUnitSize, mUnitSize, mUnitSize);
+
+            foreach (Point neighborPos in mRelativeNeighbors)
+            {
+                var neighborPosX = startTile.X + (neighborPos.X * mUnitSize);
+                var neighborPosY = startTile.Y + (neighborPos.Y * mUnitSize);
+                
+                var neighborTileMapX = neighborPosX / mUnitSize;
+                var neighborTileMapY = neighborPosY / mUnitSize;
+
+                if (neighborTileMapX > mMapWidth - 1 || neighborTileMapX < 0 || neighborTileMapY > mMapHeight - 1 ||
+                    neighborTileMapY < 0)
+                {
+                    neighborTiles.Add(new Rectangle(neighborPosX, neighborPosY, mUnitSize, mUnitSize));
+                    continue;
+                }
+
+                int metaData = GetMapAt(neighborTileMapX, neighborTileMapY);
+                if (metaData > -1) // is a wall
+                {
+                    neighborTiles.Add(new Rectangle(neighborPosX, neighborPosY, mUnitSize, mUnitSize));
+                }
+            }
+            return neighborTiles;
+        }
+
         private void UpdateCameraPlane()
         {
             float camwidth = (float)Math.Tan(MathHelper.ToRadians(mFoVInDegrees) / 2);
             mCameraProjectionPlane = Vector2.Normalize(new Vector2(-mPlayerDir.Y, mPlayerDir.X)) * camwidth;
         }
+    }
+
+    internal enum IntersectionType
+    {
+        NoIntersection,
+        IntersectionOnX,
+        IntersectionOnY,
+        IntersectionOnCorner
+    }
+
+    internal struct CollisionInfo
+    {
+        public IntersectionType Type;
+        public float Depth;
+        public Vector2 ContactNormal;
     }
 
     internal struct WallSegmentInfo
