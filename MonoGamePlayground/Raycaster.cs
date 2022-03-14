@@ -11,7 +11,32 @@ using Rectangle = Microsoft.Xna.Framework.Rectangle;
 
 namespace MonoGamePlayground
 {
+    internal enum IntersectionType
+    {
+        NoIntersection,
+        IntersectionOnX,
+        IntersectionOnY,
+        IntersectionOnCorner
+    }
+
+    internal struct CollisionInfo
+    {
+        public IntersectionType Type;
+        public float Depth;
+        public Vector2 ContactNormal;
+    }
+
+    internal struct WallSegmentInfo
+    { 
+        public int Height { get; set; }
+        public bool SideIsEastWestSide { get; set; }
+        public double Distance { get; set; }
+        public int Texture { get; set; }
+        public int TexX { get; set; }
+        public int ColumnOnScreenX { get; set; }
+    }
     public enum DisplayMode { Default, Precalculations, EqualDistanceSteps, Collisions, MultipleRaysWithCollisions, MultipleRays, MultipleRaysWithFishEyeCorrection, AllOn }
+    
     public static class Extensions
     {
         // how many pixel are the size of one map grid unit? pixel to map grid conversion uses this
@@ -26,6 +51,7 @@ namespace MonoGamePlayground
             return $"({value.X:#,###.##} / {value.Y:#,###.##})";
         }
     }
+    
     public class Raycaster : Game
     {
         private int mMapWidth = 10;
@@ -64,6 +90,7 @@ namespace MonoGamePlayground
         private List<Tuple<Vector2, float>> mCircles = new List<Tuple<Vector2, float>>();
         
         private int[] mMap;
+        private Sprite[] mSpriteMap;
         private Vector2 mCameraProjectionPlane;
         public bool ShowEqualDistanceSteps { get; set; }
         public bool ShowCollisionPoints { get; set; }
@@ -78,6 +105,7 @@ namespace MonoGamePlayground
         public bool ShowDebugText { get; set; }
         public bool DoFishEyeCorrection { get; set; }
         public bool DoCollisionsWithMap { get; set; }
+        public bool ShowSprites { get; set; }
         public int RayCount { get; set; }
         
         public bool ShowTextures { get; set; }
@@ -93,6 +121,9 @@ namespace MonoGamePlayground
         private float mPlayerCollisionRadius = 0.2f;
         private IntersectionType mCurrentIntersection;
         private IntersectionType mLastAxisIntersection;
+        private List<Sprite> mVisibleSprites = new List<Sprite>();
+        private double[] mZBuffer;
+        private Texture2D[] mSpriteTextures;
 
         public Raycaster()
         {
@@ -117,6 +148,8 @@ namespace MonoGamePlayground
             mPlayerPos = mPlayerPixelPos / mUnitSize;
             mPlayerDir = new Vector2(2, 1);
             mPlayerDir.Normalize();
+
+            mZBuffer = new double[mScreenWidth];
             
             mDrawer = new DebugDrawer(_graphics.GraphicsDevice);
 
@@ -132,13 +165,13 @@ namespace MonoGamePlayground
                 Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/bookshelf.png"),
                 Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/felix.png"),
             };
+            mSpriteTextures = new[] {Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/spriteOne.png"), Texture2D.FromFile(_graphics.GraphicsDevice, "Content/Textures/SpriteTwo.png"),};
             LoadMap();
-
-            DoCollisionsWithMap = true;
         }
 
         private void LoadMap()
         {
+            mSpriteMap = new Sprite[mMapWidth * mMapHeight];
             mMap = new int[mMapWidth * mMapHeight];
             for (int x = 0; x < mMapWidth; x++)
             {
@@ -161,6 +194,9 @@ namespace MonoGamePlayground
             SetMapAt(9, 9, 0);
             SetMapAt(9, 8, 5);
             SetMapAt(9, 7, 0);
+            
+            SetSpriteMapAt(4,4, new Sprite(new Vector2(4.5f, 4.5f), mSpriteTextures[0]));
+            SetSpriteMapAt(4,6, new Sprite(new Vector2(4.5f, 6.5f), mSpriteTextures[1]));
         }
 
         private void SetMapAt(int x, int y, int value)
@@ -173,6 +209,18 @@ namespace MonoGamePlayground
             if (x < 0 || x >= mMapWidth || y < 0 || y >= mMapHeight)
                 return 0;
             return mMap[y * mMapWidth + x];
+        }
+        
+        private void SetSpriteMapAt(int x, int y, Sprite value)
+        {
+            mSpriteMap[y * mMapWidth + x] = value;
+        }
+
+        private Sprite GetSpriteMapAt(int x, int y)
+        {
+            if (x < 0 || x >= mMapWidth || y < 0 || y >= mMapHeight)
+                return null;
+            return mSpriteMap[y * mMapWidth + x];
         }
 
         private void NextDisplayMode()
@@ -218,6 +266,8 @@ namespace MonoGamePlayground
                     ShowCameraPlane = true;
                     DoFishEyeCorrection = true;
                     ShowTextures = true;
+                    DoCollisionsWithMap = true;
+                    ShowSprites = true;
                     RayCount = mRayCountNeeded;
                     break;
                 case DisplayMode.MultipleRaysWithCollisions:
@@ -276,6 +326,7 @@ namespace MonoGamePlayground
             HandleInput();
 
             Raycast();
+            SpriteProjection();
 
             if (ShowDebugText)
             {
@@ -293,6 +344,86 @@ namespace MonoGamePlayground
             base.Update(gameTime);
         }
 
+        private void SpriteProjection()
+        {
+            // Nach Entfernung zum Spieler sortieren
+            mVisibleSprites.Sort(
+                (spr1, spr2) 
+                    => Vector2.DistanceSquared(mPlayerPos, spr2.Position).CompareTo(Vector2.DistanceSquared(mPlayerPos, spr1.Position)));
+            
+            foreach (var sprite in mVisibleSprites)
+            {
+                sprite.Stripes.Clear();
+                
+                mPoints.Add(sprite.Position);
+                
+                long spriteScreenX = GetSpriteScreenX(sprite.Position, out var spriteDepthZ);
+
+                //calculate height of the sprite on screen
+                int spriteHeight = (int)Math.Abs(mScreenHeight / spriteDepthZ); //using "transformY" instead of the real distance prevents fisheye
+                
+                //calculate lowest and highest pixel to fill in current stripe
+                int drawStartY = -spriteHeight / 2 + mScreenHeight / 2;
+
+                int spriteWidth = (int)Math.Abs(mScreenHeight / spriteDepthZ);
+                long drawStartX = -spriteWidth / 2 + spriteScreenX;
+                if (drawStartX < 0) drawStartX = 0;
+                long drawEndX = spriteWidth / 2 + spriteScreenX;
+                if (drawEndX >= mScreenWidth) drawEndX = mScreenWidth - 1;
+                
+                //loop through every vertical stripe of the sprite on screen
+                Rectangle sourceRectByIndex = sprite.SourceRect;
+                for (long x = drawStartX; x < drawEndX; x++)
+                {
+                    int texX = (int)((256.0 * (x - (-spriteWidth / 2.0 + spriteScreenX)) * sprite.FrameWidth / spriteWidth) / 256.0);
+                    //the conditions in the if are:
+                    //1) it's in front of camera plane so you don't see things behind you
+                    //2) it's on the screen (left)
+                    //3) it's on the screen (right)
+                    //4) ZBuffer, with perpendicular distance
+                    Rectangle textureSourceRect = new Rectangle(sourceRectByIndex.X + texX, sourceRectByIndex.Y + 0, 1, sprite.FrameHeight);
+
+                    if (spriteDepthZ > 0 && x > 0 && x < mScreenWidth && spriteDepthZ < mZBuffer[x])
+                    {
+                        Rectangle spriteDestRect = new Rectangle((int)x, drawStartY, 1, spriteHeight);
+                        sprite.Stripes.Add(new SpriteStripe() { ScreenRect = spriteDestRect, TextureRect = textureSourceRect });
+                    }
+                }
+            }
+        }
+
+        
+
+        /// <summary>
+        /// Translates the spritePos by the Camera position, so do not this beforehand.
+        /// </summary>
+        /// <param name="spritePos">The position of the sprite that will be mapped to the screen.</param>
+        /// <param name="transformY">Will contain the depth of the sprite, the Z value.</param>
+        /// <returns>The X coordinate on the screen in pixels, where this spritePos should be drawn.</returns>
+        private int GetSpriteScreenX(Vector2 spritePos, out double transformY)
+        {
+            double spriteX = spritePos.X - mPlayerPos.X;
+            double spriteY = spritePos.Y - mPlayerPos.Y;
+
+            var dir = mPlayerDir;
+            
+            double invDet = 1.0 / (mCameraProjectionPlane.X * dir.Y - dir.X * mCameraProjectionPlane.Y);
+
+            double transformX = invDet * (dir.Y * spriteX - dir.X * spriteY);
+            transformY = invDet * (-mCameraProjectionPlane.Y * spriteX + mCameraProjectionPlane.X * spriteY);
+            
+            Display("TransformX", transformX.ToString("0.00"));
+            Display("TransformY", transformY.ToString("0.00"));
+            
+            double relativeX = transformX / transformY;
+            Display("relativeX", relativeX.ToString("0.00"));
+            // transformX -2..2
+            int spriteScreenX = (int)((mScreenWidth / 2.0) * (1 + transformX / transformY));
+            //int spriteScreenX = (int) (((transformX + 2.0d) / 4.0d) * mScreenWidth);
+            Display("spriteScreenX", spriteScreenX.ToString());
+            return spriteScreenX;
+        }
+        
         private void Raycast()
         {
             mRedLines.Clear();
@@ -301,6 +432,8 @@ namespace MonoGamePlayground
             mRedPoints.Clear();
             mBlueLines.Clear();
             mPoints.Clear();
+            
+            mVisibleSprites.Clear();
             
             Vector2 raydir = new Vector2(mPlayerDir.X, mPlayerDir.Y);
             
@@ -415,6 +548,11 @@ namespace MonoGamePlayground
 
                     if (ShowGridSteps) mPoints.Add(new Vector2(mapX + 0.5f, mapY + 0.5f));
                     
+                    // Sprites - Prüfen ob Sprites auf diesem Feld sind
+                    Sprite visibleSprite = GetSpriteMapAt(mapX, mapY);
+                    if (visibleSprite != null && !mVisibleSprites.Contains(visibleSprite))
+                        mVisibleSprites.Add(visibleSprite);
+                    
                     // 5. Prüfen wir ob eine Wand getroffen wurde
                     textureIndex = GetMapAt(mapX, mapY);
                     if (textureIndex > -1)
@@ -452,6 +590,8 @@ namespace MonoGamePlayground
                     // cameraX(-1) -> : -fov/2
                     perpWallDist *= Math.Cos(rayAngle * cameraX);
                 }
+                
+                mZBuffer[columnOnScreen] = perpWallDist;
                 
                 // 7. Die Höhe des Wandsegments und beliebige andere Parameter zum Zeichnen ermitteln
                 int wallHeight = (int)Math.Abs((mScreenHeight / perpWallDist) * mWallHeightFactor);
@@ -514,7 +654,7 @@ namespace MonoGamePlayground
 
             Draw2DView();
             
-            _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.PointClamp);
+            _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp);
             
             Draw3DView();
             
@@ -577,10 +717,8 @@ namespace MonoGamePlayground
 
         private void Draw3DView()
         {
-            for (var columnX = 0; columnX < mWallHits.Length; columnX++)
+            foreach (var wallHit in mWallHits)
             {
-                var wallHit = mWallHits[columnX];
-
                 if (ShowTextures)
                 {
                     DrawTextured(wallHit);
@@ -590,7 +728,28 @@ namespace MonoGamePlayground
                     DrawColored(wallHit);
                 }
             }
+
+            if (ShowTextures && ShowSprites)
+            {
+                DrawSprites();
+            }
         }
+
+        private void DrawSprites()
+        {
+            foreach (var sprite in mVisibleSprites)
+            {
+                var texture = sprite.Texture;
+                foreach (var stripe in sprite.Stripes)
+                {
+                    var stripeScreenRect = stripe.ScreenRect;
+                    stripeScreenRect.X += mScreenWidth;
+                    _spriteBatch.Draw(texture, stripeScreenRect, stripe.TextureRect, Color.White, 0f, Vector2.Zero, SpriteEffects.None, 0.9f);
+                }
+            }
+        }
+
+        
 
         private void DrawColored(WallSegmentInfo wallHit)
         {
@@ -799,13 +958,14 @@ namespace MonoGamePlayground
             mPlayerMapPos = new Point((int) mPlayerPos.X, (int) mPlayerPos.Y);
         }
 
-        public Vector2 CollideWithMap(Vector2 currentPosition, Vector2 intendedPosition)
+        private Vector2 CollideWithMap(Vector2 currentPosition, Vector2 intendedPosition)
         {
             Vector2 newPos = intendedPosition;
             Vector2 velocity = intendedPosition - currentPosition;
             Display("Velocity", velocity.ToString());
             List<Rectangle> blockingTiles = GetBlockingNeighbors(intendedPosition / mUnitSize);
             mCurrentIntersection = IntersectionType.NoIntersection;
+            
             // Kollisionen mit möglichen Nachbarfeldern
             Vector2 correctionVectorWalls = Vector2.Zero;
             Vector2 correctionVectorCorners = Vector2.Zero;
@@ -825,15 +985,11 @@ namespace MonoGamePlayground
                 {
                     mCurrentIntersection = nextIntersection;
                     correctionVectorWalls += collisionInfo.ContactNormal * collisionInfo.Depth;
-                    Display("Depth", collisionInfo.Depth.ToString());
-                    Display("Normal", collisionInfo.ContactNormal.ToPrettyString());
                 }
                 else if (nextIntersection == IntersectionType.IntersectionOnCorner)
                 {
                     mCurrentIntersection = nextIntersection;
                     correctionVectorCorners = collisionInfo.ContactNormal * collisionInfo.Depth;
-                    Display("Depth", collisionInfo.Depth.ToString());
-                    Display("Normal", collisionInfo.ContactNormal.ToPrettyString());
                 }
             }
             Vector2 realCorrectionVector;
@@ -848,7 +1004,6 @@ namespace MonoGamePlayground
             }
             
             newPos = newPos + realCorrectionVector;
-            
             return newPos;
         }
 
@@ -873,15 +1028,21 @@ namespace MonoGamePlayground
             if (distanceX >= 0)
             {
                 var contactNormalY = Vector2.Normalize(new Vector2(0, circleCenter.Y - rectCenter.Y));
-                return new CollisionInfo() {Type = IntersectionType.IntersectionOnX, Depth = penetrationDepth,
-                    ContactNormal = contactNormalY};
+                return new CollisionInfo() {
+                    Type = IntersectionType.IntersectionOnX,
+                    Depth = penetrationDepth,
+                    ContactNormal = contactNormalY
+                };
             }
 
             if (distanceY >= 0)
             {
                 var contactNormalX = Vector2.Normalize(new Vector2(circleCenter.X - rectCenter.X, 0));
-                return new CollisionInfo() {Type = IntersectionType.IntersectionOnY, Depth = penetrationDepth, 
-                    ContactNormal = contactNormalX};
+                return new CollisionInfo() {
+                    Type = IntersectionType.IntersectionOnY, 
+                    Depth = penetrationDepth, 
+                    ContactNormal = contactNormalX
+                };
             }
 
             var cornerDistanceSq = 
@@ -950,28 +1111,5 @@ namespace MonoGamePlayground
         }
     }
 
-    internal enum IntersectionType
-    {
-        NoIntersection,
-        IntersectionOnX,
-        IntersectionOnY,
-        IntersectionOnCorner
-    }
-
-    internal struct CollisionInfo
-    {
-        public IntersectionType Type;
-        public float Depth;
-        public Vector2 ContactNormal;
-    }
-
-    internal struct WallSegmentInfo
-    { 
-        public int Height { get; set; }
-        public bool SideIsEastWestSide { get; set; }
-        public double Distance { get; set; }
-        public int Texture { get; set; }
-        public int TexX { get; set; }
-        public int ColumnOnScreenX { get; set; }
-    }
+    
 }

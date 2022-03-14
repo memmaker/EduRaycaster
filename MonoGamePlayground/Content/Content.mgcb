@@ -20,6 +20,13 @@
 /processorParam:TextureFormat=Compressed
 /build:Fonts/Default.spritefont;Fonts/Default.spritefont
 
+
+#begin Textures/spriteOne.png
+/copy:Textures/spriteOne.png
+
+#begin Textures/SpriteTwo.png
+/copy:Textures/SpriteTwo.png
+
 #begin Textures/felix.png
 /copy:Textures/felix.png
 
