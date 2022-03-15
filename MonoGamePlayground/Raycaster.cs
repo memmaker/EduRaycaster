@@ -57,7 +57,7 @@ namespace MonoGamePlayground
         private int mMapWidth = 10;
         private int mMapHeight = 10;
         private float mFoVInDegrees = 66.0f;
-        private float mWallHeightFactor = 0.8f;
+        private float mHeightFactor = 0.8f;
         
         private GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
@@ -357,12 +357,14 @@ namespace MonoGamePlayground
                 
                 mPoints.Add(sprite.Position);
                 
+                // Bei welcher X Koordinate auf dem Bildschirm befindet sich die Mitte des Sprites?
+                // Wie weit entfernt ist das Sprite?
                 long spriteScreenX = GetSpriteScreenX(sprite.Position, out var spriteDepthZ);
 
-                //calculate height of the sprite on screen
-                int spriteHeight = (int)Math.Abs(mScreenHeight / spriteDepthZ); //using "transformY" instead of the real distance prevents fisheye
+                // Anhand der Entfernung die Höhe bestimmen
+                int spriteHeight = (int)(Math.Abs(mScreenHeight / spriteDepthZ) * mHeightFactor); //using "transformY" instead of the real distance prevents fisheye
                 
-                //calculate lowest and highest pixel to fill in current stripe
+                // Berechnen des Rechtecks auf dem Bildschirm in das gezeichnet wird
                 int drawStartY = -spriteHeight / 2 + mScreenHeight / 2;
 
                 int spriteWidth = (int)Math.Abs(mScreenHeight / spriteDepthZ);
@@ -371,16 +373,18 @@ namespace MonoGamePlayground
                 long drawEndX = spriteWidth / 2 + spriteScreenX;
                 if (drawEndX >= mScreenWidth) drawEndX = mScreenWidth - 1;
                 
-                //loop through every vertical stripe of the sprite on screen
+                // Die vertikalen Streifen durchgehen
                 Rectangle sourceRectByIndex = sprite.SourceRect;
                 for (long x = drawStartX; x < drawEndX; x++)
                 {
+                    // Anhand des X offsets die Texturkoordinate auf der X Achse berechnen
                     int texX = (int)((256.0 * (x - (-spriteWidth / 2.0 + spriteScreenX)) * sprite.FrameWidth / spriteWidth) / 256.0);
-                    //the conditions in the if are:
-                    //1) it's in front of camera plane so you don't see things behind you
-                    //2) it's on the screen (left)
-                    //3) it's on the screen (right)
-                    //4) ZBuffer, with perpendicular distance
+                    
+                    // Wir nehmen einen Streifen nur dann zum Zeichnen mit auf:
+                    // 1) Der Streifen muß vor der Kamera sein und nicht dahinter
+                    // 2) Der Streifen muß innerhalb des Bildschirms sein
+                    // 3) Der Streifen wird nicht von einer Wand verdeckt (Z-Buffer check)
+                    
                     Rectangle textureSourceRect = new Rectangle(sourceRectByIndex.X + texX, sourceRectByIndex.Y + 0, 1, sprite.FrameHeight);
 
                     if (spriteDepthZ > 0 && x > 0 && x < mScreenWidth && spriteDepthZ < mZBuffer[x])
@@ -395,7 +399,7 @@ namespace MonoGamePlayground
         
 
         /// <summary>
-        /// Translates the spritePos by the Camera position, so do not this beforehand.
+        /// Translates the spritePos by the Camera position
         /// </summary>
         /// <param name="spritePos">The position of the sprite that will be mapped to the screen.</param>
         /// <param name="transformY">Will contain the depth of the sprite, the Z value.</param>
@@ -405,11 +409,9 @@ namespace MonoGamePlayground
             double spriteX = spritePos.X - mPlayerPos.X;
             double spriteY = spritePos.Y - mPlayerPos.Y;
 
-            var dir = mPlayerDir;
-            
-            double invDet = 1.0 / (mCameraProjectionPlane.X * dir.Y - dir.X * mCameraProjectionPlane.Y);
+            double invDet = 1.0 / (mCameraProjectionPlane.X * mPlayerDir.Y - mPlayerDir.X * mCameraProjectionPlane.Y);
 
-            double transformX = invDet * (dir.Y * spriteX - dir.X * spriteY);
+            double transformX = invDet * (mPlayerDir.Y * spriteX - mPlayerDir.X * spriteY);
             transformY = invDet * (-mCameraProjectionPlane.Y * spriteX + mCameraProjectionPlane.X * spriteY);
             
             Display("TransformX", transformX.ToString("0.00"));
@@ -417,9 +419,9 @@ namespace MonoGamePlayground
             
             double relativeX = transformX / transformY;
             Display("relativeX", relativeX.ToString("0.00"));
-            // transformX -2..2
+            
             int spriteScreenX = (int)((mScreenWidth / 2.0) * (1 + transformX / transformY));
-            //int spriteScreenX = (int) (((transformX + 2.0d) / 4.0d) * mScreenWidth);
+            
             Display("spriteScreenX", spriteScreenX.ToString());
             return spriteScreenX;
         }
@@ -594,7 +596,7 @@ namespace MonoGamePlayground
                 mZBuffer[columnOnScreen] = perpWallDist;
                 
                 // 7. Die Höhe des Wandsegments und beliebige andere Parameter zum Zeichnen ermitteln
-                int wallHeight = (int)Math.Abs((mScreenHeight / perpWallDist) * mWallHeightFactor);
+                int wallHeight = (int)Math.Abs((mScreenHeight / perpWallDist) * mHeightFactor);
 
                 mWallHits[columnOnScreen] = new WallSegmentInfo()
                 {
@@ -749,8 +751,6 @@ namespace MonoGamePlayground
             }
         }
 
-        
-
         private void DrawColored(WallSegmentInfo wallHit)
         {
             int columnX = wallHit.ColumnOnScreenX;
@@ -885,14 +885,14 @@ namespace MonoGamePlayground
             
             if (keyboardState.IsKeyDown(Keys.J) && mOldKeyboardState.IsKeyUp(Keys.J))
             {
-                mWallHeightFactor -= 0.1f;
-                Display("Wall Height Factor", mWallHeightFactor.ToString(CultureInfo.InvariantCulture));
+                mHeightFactor -= 0.1f;
+                Display("Wall Height Factor", mHeightFactor.ToString(CultureInfo.InvariantCulture));
             }
             
             if (keyboardState.IsKeyDown(Keys.K) && mOldKeyboardState.IsKeyUp(Keys.K))
             {
-                mWallHeightFactor += 0.1f;
-                Display("Wall Height Factor", mWallHeightFactor.ToString(CultureInfo.InvariantCulture));
+                mHeightFactor += 0.1f;
+                Display("Wall Height Factor", mHeightFactor.ToString(CultureInfo.InvariantCulture));
             }
             
             
@@ -994,6 +994,7 @@ namespace MonoGamePlayground
             }
             Vector2 realCorrectionVector;
             
+            // Falls wir mit mindestens einer Achse kollidieren, können wir die Kollisionen mit den Ecken ignorieren
             if (correctionVectorWalls != Vector2.Zero)
             {
                 realCorrectionVector = correctionVectorWalls;
@@ -1010,9 +1011,11 @@ namespace MonoGamePlayground
         // Handle intersection between a circle and an axis-aligned rectangle with floating point precision
         private CollisionInfo Intersects(Vector2 circleCenter, float circleRadius, Vector2 rectCenter, float rectWidth, float rectHeight)
         {
+            // Absolute Distanz zwischen den Mittelpunkten
             var circleDistanceX = Math.Abs(circleCenter.X - rectCenter.X);  // distance between center of circle and rect on X axis
             var circleDistanceY = Math.Abs(circleCenter.Y - rectCenter.Y);  // distance between center of circle and rect on Y axis
 
+            // Einfachster Fall, keine Kollision möglich
             if (circleDistanceX > (rectWidth / 2 + circleRadius)) { return new CollisionInfo() {Type = IntersectionType.NoIntersection}; }
             if (circleDistanceY > (rectHeight / 2 + circleRadius)) { return new CollisionInfo() {Type = IntersectionType.NoIntersection}; }
             
@@ -1025,6 +1028,7 @@ namespace MonoGamePlayground
             var dist = new Vector2(circleCenter.X - NearestX, circleCenter.Y - NearestY);
             var penetrationDepth = circleRadius - dist.Length();
             
+            // Kollision auf einer Achse
             if (distanceX >= 0)
             {
                 var contactNormalY = Vector2.Normalize(new Vector2(0, circleCenter.Y - rectCenter.Y));
@@ -1044,7 +1048,8 @@ namespace MonoGamePlayground
                     ContactNormal = contactNormalX
                 };
             }
-
+            
+            // Prüfen ob wir einen Eckfall haben
             var cornerDistanceSq = 
                 Math.Pow(circleDistanceX - rectWidth/2, 2) +
                 Math.Pow(circleDistanceY - rectHeight/2, 2);
